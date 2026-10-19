@@ -194,9 +194,9 @@ families issue one instruction for the whole tile. The control rows matter becau
 arm changes only the family that previously had no arm — RDNA3/RDNA4 and CDNA4 keep their
 WMMA/MFMA paths unchanged.
 
-Limits: numerics of the decomposed path are measured on gfx1031 (the probe above); performance is
-not. The pre-fix 4096³ e4m3 GEMM coincided with amdgpu ring timeouts/resets at 02:20 local, so the
-post-fix rerun waits for the admission fault window instead of being claimed.
+Limits: this section is about compilation and one GEMM shape. Numerics are measured on gfx1031 for
+every format, including the packed-along-M/N shapes, and the GEMM performance is measured from 1024³
+to 4096³; neither is a claim about the user's workload.
 
 ## Cross-family gap that is not RDNA2's alone: `eviction_policy` is dropped
 
