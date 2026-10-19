@@ -104,6 +104,49 @@ no `tl.dot` operand type that reaches them, even though LLVM exposes the intrins
 bit). That is a frontend-and-lowering feature, not a gate to widen, and it is the one place where an
 int4 kernel could beat the dequant-then-dot4 path rather than just match it.
 
+## `tl.dot_scaled` aborted the process on RDNA2 — closed by decomposition
+
+`tl.dot_scaled` (MX scaled dot) was the one feature where RDNA2 fell off the pattern list entirely:
+`AccelerateAMDMatmul` registered `ScaledBlockedTo*` only for CDNA4/5 and the software decomposition
+only for CDNA2/3/RDNA3+, so on gfx103x no pattern matched, the op survived into
+`ConvertTritonGPUToLLVM`, and
+[DotOpToLLVM.cpp](file:///home/trave/code/triton/third_party/amd/lib/TritonAMDGPUToLLVM/DotOpToLLVM.cpp)
+hit `report_fatal_error("Unsupported DotScaleOp found when converting TritonGPU to LLVM")`. That is an
+uncatchable abort, not a diagnosable error, and it made every scaled-dot kernel unusable on this
+family. It was a missing arm, not a hardware limit: RDNA2 has no MFMA/WMMA, but it does not need one
+for this feature, because the decomposition the other families already run in software is the same
+`amdg.scaled_upcast_fp4` / `tt.fp_to_fp` plus plain `tt.dot` shape that the FMA lowering already
+handles.
+
+The RDNA2 arm now registers exactly `DecomposeAMDScaledBlocked` at the same benefit as CDNA2/3 and
+RDNA3. Two pieces of evidence:
+
+* `test/TritonGPU/amd/accelerate-amd-matmul-rdna-no-matrix.mlir` asserts both halves on gfx1030 — the
+  op is gone *and* the upcast-plus-dot shape replaced it — with gfx1010's Unknown-family arm as the
+  negative control and the existing RDNA3/NO-MATRIX arms covering the other families.
+* The compile-only probe
+  [rdna2_dot_scaled_compile_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_dot_scaled_compile_probe.py)
+  walks the whole frontend-to-LLVM pipeline against an explicit `GPUTarget` (no device, no launch).
+  All three formats compile on gfx1030 and native gfx1031, with no reported spills at the probe's
+  32x32x64 / 4-warp shape:
+
+| arch | mxfp8 | mxfp4 | mixed | dot path in `.amdgcn` |
+| --- | --- | --- | --- | --- |
+| gfx1030 / gfx1031 | 2921 instr | 2710 | 3019 | FMA (dot-family histogram empty) |
+| gfx1100 | 1532 | 1404 | 1579 | `v_wmma_f32_16x16x16_bf16` x4 |
+| gfx1200 | 1006 | 835 | 964 | `v_wmma_f32_16x16x16_bf16` x4 |
+| gfx942 | 1003 | 924 | 992 | `v_mfma_f32_32x32x8_bf16` x8 |
+
+Instruction counts are totals and not comparable across families: gfx103x executes the dot as
+per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
+families issue one instruction for the whole tile. The control rows matter because they show the new
+arm changes only the family that previously had no arm — RDNA3/RDNA4 and CDNA4 keep their
+WMMA/MFMA paths unchanged.
+
+Limits: this is compile-only, and the lit test pins the IR shape. Numerical validation of the
+decomposed MX path on hardware is still owed; device work on this branch remains blocked, so it is
+tracked with the other hardware-validation items rather than claimed.
+
 ## Cross-family gap that is not RDNA2's alone: `eviction_policy` is dropped
 
 `tl.load(..., eviction_policy='evict_first'|'evict_last')` reaches Triton IR on the op (the TTGIR shows
