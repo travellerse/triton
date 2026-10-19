@@ -1,0 +1,91 @@
+{
+ "shapes": {
+  "q_tokens": 5120,
+  "k_tokens": 10287,
+  "heads": 32,
+  "D": 128
+ },
+ "identity": {
+  "gcn": "gfx1030",
+  "override": "10.3.0"
+ },
+ "arms": {
+  "flag_off": {
+   "wall_ms_per_call": 110.99,
+   "device_ms_sum": 110.719,
+   "unattributed_ms": 0.271,
+   "kernels": [
+    {
+     "kernel": "Cijk_Alik_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1",
+     "count": 5,
+     "ms": 63.367
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::cunn_SoftMaxForwardFast<8, c10::Ha",
+     "count": 5,
+     "ms": 23.785
+    },
+    {
+     "kernel": "Cijk_Ailk_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1",
+     "count": 5,
+     "ms": 23.06
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_contig<at::nat",
+     "count": 1,
+     "ms": 0.265
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_",
+     "count": 1,
+     "ms": 0.242
+    }
+   ],
+   "repack_stats": {
+    "applied": 0,
+    "skipped": 0
+   }
+  },
+  "flag_on": {
+   "wall_ms_per_call": 90.651,
+   "device_ms_sum": 90.307,
+   "unattributed_ms": 0.344,
+   "kernels": [
+    {
+     "kernel": "Cijk_Ailk_Bljk_HHS_BH_MT128x128x8_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1_",
+     "count": 5,
+     "ms": 38.823
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::cunn_SoftMaxForwardFast<8, c10::Ha",
+     "count": 5,
+     "ms": 23.95
+    },
+    {
+     "kernel": "Cijk_Ailk_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1",
+     "count": 5,
+     "ms": 23.499
+    },
+    {
+     "kernel": "_repack.kd",
+     "count": 1,
+     "ms": 3.514
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_contig<at::nat",
+     "count": 1,
+     "ms": 0.272
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_",
+     "count": 1,
+     "ms": 0.249
+    }
+   ],
+   "repack_stats": {
+    "applied": 9,
+    "skipped": 0
+   }
+  }
+ }
+}

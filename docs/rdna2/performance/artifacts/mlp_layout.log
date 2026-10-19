@@ -1,0 +1,49 @@
+proj_qkv_out  linear_stridedB             9.857 ms   17.43 TFLOPs  gain  +0.000 ms
+proj_qkv_out  linear_packedB_free         9.174 ms   18.73 TFLOPs  gain  +0.683 ms
+proj_qkv_out  linear_packedB_inside      16.286 ms   10.55 TFLOPs  gain  -6.429 ms
+proj_qkv_out  transposed_view             9.490 ms   18.10 TFLOPs  gain  +0.367 ms
+proj_qkv_out  transposed_materialised    15.981 ms   10.75 TFLOPs  gain  -6.124 ms
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:38 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+mlp_gate_up   linear_stridedB            93.202 ms   11.06 TFLOPs  gain  +0.000 ms
+mlp_gate_up   linear_packedB_free        54.153 ms   19.03 TFLOPs  gain +39.049 ms
+mlp_gate_up   linear_packedB_inside     131.448 ms    7.84 TFLOPs  gain -38.246 ms
+mlp_gate_up   transposed_view            56.003 ms   18.41 TFLOPs  gain +37.199 ms
+mlp_gate_up   transposed_materialised   121.382 ms    8.49 TFLOPs  gain -28.180 ms
+USDT:2026-10-19 17:24:45 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:45 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:45 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:46 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+mlp_down      linear_stridedB           165.072 ms    3.12 TFLOPs  gain  +0.000 ms
+mlp_down      linear_packedB_free        39.027 ms   13.21 TFLOPs  gain +126.045 ms
+mlp_down      linear_packedB_inside      61.391 ms    8.40 TFLOPs  gain +103.681 ms
+mlp_down      transposed_view            30.599 ms   16.84 TFLOPs  gain +134.473 ms
+mlp_down      transposed_materialised    36.743 ms   14.03 TFLOPs  gain +128.329 ms
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:24:53 99962:99962 SyncActivityProfilerHandler.cpp:59] profiler_stop
+wrote /tmp/q21-p1/mlp_layout.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792401867-99937-p8-mlp-layout
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10640 MiB, MemAvailable 17805 MiB
+  ! stale lock record '97473 p7-repack-prod 3072': pid 97473 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

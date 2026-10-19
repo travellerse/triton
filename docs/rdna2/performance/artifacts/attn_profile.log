@@ -1,0 +1,21 @@
+USDT:2026-10-19 17:26:34 101114:101114 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:26:34 101114:101114 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-10-19 17:26:36 101114:101114 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-10-19 17:26:36 101114:101114 SyncActivityProfilerHandler.cpp:59] profiler_stop
+=== flag_off: wall 110.990 ms/call, device sum 110.719, unattributed 0.271
+     63.367 ms x5   Cijk_Alik_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1
+     23.785 ms x5   void at::native::(anonymous namespace)::cunn_SoftMaxForwardFast<8, c10::Ha
+     23.060 ms x5   Cijk_Ailk_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1
+      0.265 ms x1   void at::native::(anonymous namespace)::CatArrayBatchedCopy_contig<at::nat
+      0.242 ms x1   void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_
+=== flag_on: wall 90.651 ms/call, device sum 90.307, unattributed 0.344
+     38.823 ms x5   Cijk_Ailk_Bljk_HHS_BH_MT128x128x8_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1_
+     23.950 ms x5   void at::native::(anonymous namespace)::cunn_SoftMaxForwardFast<8, c10::Ha
+     23.499 ms x5   Cijk_Ailk_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1
+      3.514 ms x1   _repack.kd
+      0.272 ms x1   void at::native::(anonymous namespace)::CatArrayBatchedCopy_contig<at::nat
+      0.249 ms x1   void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_
+wrote /tmp/q21-p1/attn_profile.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792401983-101099-p9-attnprof
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10693 MiB, MemAvailable 18247 MiB
+  ! stale lock record '99937 p8-mlp-layout 4096': pid 99937 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
