@@ -6,14 +6,16 @@
 
 // Operation- and type-scoped RDNA2 buffer atomic RMW (M1M candidate). gfx103x has no
 // supportsBufferAtomicRMW() entry; instead the rewrite registers for RDNA2 and only accepts
-// integer and/or/xor/umin/umax at 32 and 64 bits when every lane is provably active. The reason for
+// integer and/or/xor/umin/umax and signed min/max at 32 and 64 bits when every lane is provably
+// active. The reason for
 // the lane requirement is arithmetic, not missing documentation: a masked lane is sent to offset
 // 0x8000_0000 and the RDNA2 guide (8.1, Table 35 note 3) says buffer atomics are range-checked
 // all-or-nothing, but that offset only exceeds numRecords = 0x7FFF_FFFE under an unsigned compare,
 // which the guide does not state -- so until a device probe settles it, no masked lane may take the
 // buffer path. RDNA3 and CDNA3 are the gate-open controls, gfx90a the gate-closed control.
 // `add`, `sub` and `exch` stay on the generic path on purpose (they are native there too, and the
-// pinned per-target behaviour is kept in amd-convert-buffer-ops-atomic-rmw.mlir).
+// pinned per-target behaviour is kept in amd-convert-buffer-ops-atomic-rmw.mlir). Signed min/max are
+// an exception to the control symmetry: RDNA2 takes them, RDNA3/CDNA3 still refuse them in this pass.
 // Evidence: docs/rdna2/buffer-atomic-capability-audit-rdna2.md,
 // docs/rdna2/m1-implementation-report.md section 24.
 
@@ -150,6 +152,50 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     tt.return
   }
 
+  // Signed min/max: RDNA2 has BUFFER_ATOMIC_SMIN/SMAX and the emitter already maps RMWOp::MIN/MAX on
+  // an integer to the s* intrinsic suffix, but every other family refuses them in this pass, so the
+  // arms below are intentionally asymmetric -- that asymmetry is the cross-target gap still open.
+  // RDNA2-LABEL: @smax_i32
+  // RDNA3-LABEL: @smax_i32
+  // CDNA3-LABEL: @smax_i32
+  // GENERIC-LABEL: @smax_i32
+  tt.func public @smax_i32(%ptr: !tt.ptr<i32> {tt.divisibility = 16 : i32}, %values: tensor<1024xi32, #blocked>) {
+    %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
+    %offs = tt.make_range {end = 1024 : i32, start = 0 : i32} : tensor<1024xi32, #blocked>
+    %addrs = tt.addptr %base, %offs : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
+    // RDNA2: amdg.buffer_atomic_rmw max
+    // RDNA2-NOT: tt.atomic_rmw
+    // RDNA3: tt.atomic_rmw max
+    // RDNA3-NOT: amdg.buffer_atomic_rmw
+    // CDNA3: tt.atomic_rmw max
+    // CDNA3-NOT: amdg.buffer_atomic_rmw
+    // GENERIC: tt.atomic_rmw max
+    %res = tt.atomic_rmw max, acq_rel, gpu, %addrs, %values : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>) -> tensor<1024xi32, #blocked>
+    tt.return
+  }
+
+  // Signed min/max: RDNA2 has BUFFER_ATOMIC_SMIN/SMAX and the emitter already maps RMWOp::MIN/MAX on
+  // an integer to the s* intrinsic suffix, but every other family refuses them in this pass, so the
+  // arms below are intentionally asymmetric -- that asymmetry is the cross-target gap still open.
+  // RDNA2-LABEL: @smin_i32
+  // RDNA3-LABEL: @smin_i32
+  // CDNA3-LABEL: @smin_i32
+  // GENERIC-LABEL: @smin_i32
+  tt.func public @smin_i32(%ptr: !tt.ptr<i32> {tt.divisibility = 16 : i32}, %values: tensor<1024xi32, #blocked>) {
+    %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
+    %offs = tt.make_range {end = 1024 : i32, start = 0 : i32} : tensor<1024xi32, #blocked>
+    %addrs = tt.addptr %base, %offs : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
+    // RDNA2: amdg.buffer_atomic_rmw min
+    // RDNA2-NOT: tt.atomic_rmw
+    // RDNA3: tt.atomic_rmw min
+    // RDNA3-NOT: amdg.buffer_atomic_rmw
+    // CDNA3: tt.atomic_rmw min
+    // CDNA3-NOT: amdg.buffer_atomic_rmw
+    // GENERIC: tt.atomic_rmw min
+    %res = tt.atomic_rmw min, acq_rel, gpu, %addrs, %values : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>) -> tensor<1024xi32, #blocked>
+    tt.return
+  }
+
   // ---- negative: excluded operations must stay on the generic atomic path ----
 
   // RDNA2-LABEL: @add_i32
@@ -219,26 +265,11 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     tt.return
   }
 
-  // Signed integer min/max already use the generic path on every target, including gate-open ones.
-  // RDNA2-LABEL: @smax_smin_i32
-  // RDNA3-LABEL: @smax_smin_i32
-  // CDNA3-LABEL: @smax_smin_i32
-  // GENERIC-LABEL: @smax_smin_i32
-  tt.func public @smax_smin_i32(%ptr: !tt.ptr<i32> {tt.divisibility = 16 : i32}, %values: tensor<1024xi32, #blocked>) {
-    %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
-    %offs = tt.make_range {end = 1024 : i32, start = 0 : i32} : tensor<1024xi32, #blocked>
-    %addrs = tt.addptr %base, %offs : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
-    // RDNA2-NOT: amdg.buffer_atomic_rmw
-    // RDNA2: tt.atomic_rmw max
-    // RDNA3-NOT: amdg.buffer_atomic_rmw
-    // CDNA3-NOT: amdg.buffer_atomic_rmw
-    %res0 = tt.atomic_rmw max, acq_rel, gpu, %addrs, %values : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>) -> tensor<1024xi32, #blocked>
-    // RDNA2: tt.atomic_rmw min
-    %res1 = tt.atomic_rmw min, acq_rel, gpu, %addrs, %values : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>) -> tensor<1024xi32, #blocked>
-    tt.return
-  }
-
-  // Floating-point min/max has no RDNA2 buffer atomic and no native fallback here.
+  // Floating-point min/max is excluded on purpose, not because the instruction is missing:
+  // llc -mcpu=gfx1030 selects buffer_atomic_fmin/fmax fine. It is excluded because tl.atomic_max/min on
+  // a float does not reach this pass as RMWOp::MAX on a float at all (the frontend bitcasts and uses the
+  // signed/unsigned integer ordering trick), so turning it on would be a NaN/+-0 semantics change that
+  // nothing here has measured.
   // RDNA2-LABEL: @fmax_f32
   // RDNA3-LABEL: @fmax_f32
   // CDNA3-LABEL: @fmax_f32

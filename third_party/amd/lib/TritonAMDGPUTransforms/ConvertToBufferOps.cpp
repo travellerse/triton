@@ -67,7 +67,13 @@ bool isSplatOneConstTensor(const Value v) {
 // state which compare the hardware uses. Until a device probe settles that, only
 // lanes that are provably active may take the buffer path: no user mask and no
 // redundant threads in the value layout. Everything else keeps the generic atomic
-// lowering, which on RDNA2 CAS-expands bitwise and unsigned min/max.
+// lowering, which on RDNA2 CAS-expands bitwise, unsigned and signed min/max.
+//
+// Float min/max are deliberately not in the list even though BUFFER_ATOMIC_FMIN/FMAX select
+// (llc -mcpu=gfx1030 emits buffer_atomic_fmin): tl.atomic_max/min on floats does not arrive as
+// RMWOp::MIN/MAX on a float -- the frontend bitcasts and uses the signed/unsigned integer ordering
+// trick instead -- so the hardware ops would have to be reached through a semantics question
+// (NaN and +-0 behaviour) that this change does not need and has not answered.
 // Evidence: docs/rdna2/buffer-atomic-capability-audit-rdna2.md and
 // docs/rdna2/m1-implementation-report.md section 24.
 static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
@@ -76,7 +82,7 @@ static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
   if (!targetFeatures.isRDNA2())
     return false;
   if (!llvm::is_contained({RMWOp::AND, RMWOp::OR, RMWOp::XOR, RMWOp::UMAX,
-                           RMWOp::UMIN},
+                           RMWOp::UMIN, RMWOp::MAX, RMWOp::MIN},
                           rmwOp))
     return false;
   if (!elemTy.isInteger(32) && !elemTy.isInteger(64))
@@ -437,6 +443,12 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
     }
     LDBG("RMW supported type");
 
+    // The RDNA2 integer subset is decided once, here, because the signed min/max refusal below and
+    // the target-scoped check in step 7 have to agree about it.
+    const bool rdna2IntSubset = supportsRdna2BufferAtomicRMW(
+        targetFeatures, atomicRmwOp, checkType, op.getMask(),
+        op.getVal().getType());
+
     if (atomicRmwOp == RMWOp::FADD &&
         !targetFeatures.supportsBufferAtomicFadd(checkType)) {
       return rewriter.notifyMatchFailure(
@@ -446,16 +458,17 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
 
     if (atomicRmwOp == RMWOp::MAX || atomicRmwOp == RMWOp::MIN) {
       if (checkType.isInteger()) {
-        return rewriter.notifyMatchFailure(
-            op, "signed integer min/max RMW operations use generic atomic "
-                "lowering");
-      }
-      if (!targetFeatures.supportsBufferAtomicFMinMax(checkType)) {
+        if (!rdna2IntSubset) {
+          return rewriter.notifyMatchFailure(
+              op, "signed integer min/max RMW operations use generic atomic "
+                  "lowering");
+        }
+      } else if (!targetFeatures.supportsBufferAtomicFMinMax(checkType)) {
         return rewriter.notifyMatchFailure(
             op, "no native buffer atomic supports this floating-point min/max "
                 "target/type combination");
       }
-      LDBG("RMW floating-point min/max supported type");
+      LDBG("RMW min/max passed the type-specific target check");
     }
 
     auto vecSize = getVectorSize(ptr, axisAnalysisPass);
@@ -512,9 +525,7 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
     // 7. Targets without full buffer atomic RMW support only get the RDNA2
     //    integer subset; the broad family predicate stays untouched so no other
     //    target's behaviour changes.
-    if (!targetFeatures.supportsBufferAtomicRMW() &&
-        !supportsRdna2BufferAtomicRMW(targetFeatures, atomicRmwOp, checkType,
-                                      op.getMask(), op.getVal().getType())) {
+    if (!targetFeatures.supportsBufferAtomicRMW() && !rdna2IntSubset) {
       return rewriter.notifyMatchFailure(
           op, "target supports only a narrower buffer atomic RMW set");
     }
