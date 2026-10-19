@@ -23,7 +23,7 @@ RESULTS = []
 
 
 def record(case, ok, detail=""):
-    RESULTS.append({"case": case, "ok": bool(ok), "detail": str(detail)[:200]})
+    RESULTS.append({"case": case, "ok": bool(ok), "detail": str(detail)[:600]})
     print(f"[{'PASS' if ok else 'FAIL'}] {case}" + (f"  {detail}" if detail else ""), flush=True)
 
 
@@ -259,6 +259,165 @@ def layout_cases():
         record(f"trans + LDS round trip {M}x{N} w{nw}", isinstance(d, float) and d == 0.0, f"max_abs={d}")
 
 
+def remaining_l6_cases():
+    """The op classes the M0 audit left unevidenced on RDNA2: cache modifiers, eviction
+    policy, masked atomics under contention, cross-lane scans/gathers, fp8 in tl.dot,
+    and the libdevice math set."""
+    import torch
+    import triton
+    import triton.language as tl
+
+    @triton.jit
+    def cache_mod(x_ptr, o_ptr, n: tl.constexpr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        m = offs < n
+        a = tl.load(x_ptr + offs, mask=m, other=0.0, cache_modifier=".cg")
+        b = tl.load(x_ptr + n + offs, mask=m, other=0.0, cache_modifier=".ca")
+        tl.store(o_ptr + offs, a + b, mask=m, cache_modifier=".wt")
+
+    @triton.jit
+    def evict(x_ptr, o_ptr, n: tl.constexpr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        v = tl.load(x_ptr + offs, mask=offs < n, other=0.0, eviction_policy="evict_last")
+        tl.store(o_ptr + offs, v * 2, mask=offs < n, eviction_policy="evict_first")
+
+    @triton.jit
+    def masked_add_contended(x_ptr, o_ptr, n: tl.constexpr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        v = tl.load(x_ptr + offs, mask=offs < n, other=0.0)
+        # half the lanes masked out, all surviving lanes onto element 0
+        tl.atomic_add(o_ptr + offs * 0, v, mask=(offs < n) & (offs % 2 == 0))
+
+    @triton.jit
+    def scan_k(x_ptr, o_ptr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        v = tl.load(x_ptr + offs).to(tl.float32)
+        tl.store(o_ptr + offs, tl.cumsum(v, axis=0))
+
+    @triton.jit
+    def gather_k(x_ptr, i_ptr, o_ptr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        src = tl.load(x_ptr + offs).to(tl.float32)[None, :]
+        idx = tl.load(i_ptr + offs)[None, :].to(tl.int32)
+        got = tl.gather(src, idx, axis=1)
+        tl.store(o_ptr + offs[None, :], got)
+
+    @triton.jit
+    def math_k(x_ptr, o_ptr, n: tl.constexpr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        m = offs < n
+        v = tl.load(x_ptr + offs, mask=m, other=0.0).to(tl.float32)
+        r = (tl.exp(v) + tl.exp2(v) + tl.log(tl.abs(v) + 1e-3) + tl.sqrt(tl.abs(v))
+             + tl.rsqrt(tl.abs(v) + 1e-3) + tl.sigmoid(v) + tl.floor(v) + tl.ceil(v)
+             + tl.erf(v) + tl.sin(v) + tl.cos(v) + tl.fma(v, 2.0, 1.0))
+        tl.store(o_ptr + offs, r, mask=m)
+
+    @triton.jit
+    def fp8_dot(a_ptr, b_ptr, o_ptr, BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr):
+        rm = tl.arange(0, BM)
+        rn = tl.arange(0, BN)
+        rk = tl.arange(0, BK)
+        a = tl.load(a_ptr + rm[:, None] * BK + rk[None, :])
+        b = tl.load(b_ptr + rk[:, None] * BN + rn[None, :])
+        tl.store(o_ptr + rm[:, None] * BN + rn[None, :], tl.dot(a, b))
+
+    @triton.jit
+    def flip_k(x_ptr, o_ptr, BLOCK: tl.constexpr):
+        offs = tl.arange(0, BLOCK)
+        v = tl.load(x_ptr + offs)
+        tl.store(o_ptr + offs, tl.flip(v, 0))
+
+    @triton.jit
+    def reduce1_k(x_ptr, o_ptr, R: tl.constexpr, C: tl.constexpr):
+        rr = tl.arange(0, R)[:, None]
+        cc = tl.arange(0, C)[None, :]
+        v = tl.load(x_ptr + rr * C + cc).to(tl.float32)
+        tl.store(o_ptr + tl.arange(0, C)[None, :], tl.sum(v, axis=0))
+
+    torch.manual_seed(21)
+    n, BLOCK = 256, 256
+    x = torch.randn(n, device="cuda", dtype=torch.float32)
+    o = torch.zeros(n, device="cuda", dtype=torch.float32)
+
+    try:
+        x2 = torch.randn(2 * n, device="cuda", dtype=torch.float32)
+        o2 = torch.empty(n, device="cuda", dtype=torch.float32)
+        cache_mod[(1,)](x2, o2, n=n, BLOCK=BLOCK)
+        d = max_abs(o2, x2[:n] + x2[n:])
+        record("cache_modifier .cg/.ca loads and .wt store compute correctly",
+               isinstance(d, float) and d == 0.0, f"max_abs={d}")
+    except Exception as exc:
+        record("cache_modifier .cg/.ca/.wt compiles on RDNA2", False, exc)
+
+    try:
+        evict[(1,)](x, o, n=n, BLOCK=BLOCK)
+        d = max_abs(o, x * 2)
+        record("eviction_policy evict_last/evict_first compute correctly",
+               isinstance(d, float) and d == 0.0, f"max_abs={d}")
+    except Exception as exc:
+        record("eviction_policy compiles on RDNA2", False, exc)
+
+    src = torch.ones(256, device="cuda", dtype=torch.float32)
+    dst = torch.zeros(1, device="cuda", dtype=torch.float32)
+    masked_add_contended[(1,)](src, dst, n=256, BLOCK=256, num_warps=4)
+    record("masked atomic_add under contention counts only unmasked lanes",
+           abs(float(dst.item()) - 128.0) < 1e-4, f"got={float(dst.item())}")
+
+    v = torch.randn(256, device="cuda", dtype=torch.float32)
+    o = torch.empty(256, device="cuda", dtype=torch.float32)
+    scan_k[(1,)](v, o, BLOCK=256, num_warps=4)
+    d = max_abs(o, v.cumsum(0))
+    record("tl.cumsum matches torch.cumsum", isinstance(d, float) and d < 1e-2, f"max_abs={d}")
+
+    idx = torch.randint(0, 256, (256,), device="cuda", dtype=torch.int64)
+    try:
+        gather_k[(1,)](v, idx, o, BLOCK=256, num_warps=4)
+        d = max_abs(o, v[idx])
+        record("tl.gather matches indexing", isinstance(d, float) and d == 0.0, f"max_abs={d}")
+    except Exception as exc:
+        record("tl.gather compiles on RDNA2", False, exc)
+
+    try:
+        flip_k[(1,)](v, o, BLOCK=256, num_warps=4)
+        record("tl.flip matches torch.flip", bool(torch.equal(o, torch.flip(v, (0,)))), "")
+    except Exception as exc:
+        record("tl.flip compiles on RDNA2", False, exc)
+
+    try:
+        vr = torch.randn(8, 32, device="cuda", dtype=torch.float32)
+        oc = torch.empty(32, device="cuda", dtype=torch.float32)
+        reduce1_k[(1,)](vr, oc, R=8, C=32, num_warps=4)
+        d = max_abs(oc, vr.sum(0))
+        record("cross-lane tl.sum along axis 0 (row reduce) matches torch",
+               isinstance(d, float) and abs(d) < 1e-3, f"max_abs={d}")
+    except Exception as exc:
+        record("row-wise tl.sum compiles on RDNA2", False, exc)
+
+    m = torch.linspace(-2, 2, n, device="cuda", dtype=torch.float32)
+    try:
+        math_k[(1,)](m, o, n=n, BLOCK=BLOCK)
+        ref = (torch.exp(m) + torch.exp2(m) + torch.log(m.abs() + 1e-3) + m.abs().sqrt()
+               + torch.rsqrt(m.abs() + 1e-3) + torch.sigmoid(m) + torch.floor(m) + torch.ceil(m)
+               + torch.erf(m) + torch.sin(m) + torch.cos(m)
+               + torch.addcmul(torch.full_like(m, 1.0), m, torch.full_like(m, 2.0)))
+        d = max_abs(o, ref)
+        record("libdevice math set matches torch fp32", isinstance(d, float) and d < 2e-3,
+               f"max_abs={d}")
+    except Exception as exc:
+        record("libdevice math set compiles on RDNA2", False, exc)
+
+    try:
+        a8 = (torch.randn(32, 32, device="cuda") * 0.1).to(torch.float8_e4m3fn)
+        b8 = (torch.randn(32, 32, device="cuda") * 0.1).to(torch.float8_e4m3fn)
+        o8 = torch.empty(32, 32, device="cuda", dtype=torch.float32)
+        fp8_dot[(1,)](a8, b8, o8, BM=32, BN=32, BK=32, num_warps=1)
+        d = max_abs(o8, a8.float() @ b8.float())
+        record("tl.dot accepts fp8e4nv operands on RDNA2", isinstance(d, float) and d < 0.05,
+               f"max_abs={d}")
+    except Exception as exc:
+        record("tl.dot fp8e4nv on RDNA2 (expected unsupported: no fp8 hardware path)", False, exc)
+
+
 def main():
     import torch
     if not torch.cuda.is_available():
@@ -280,7 +439,8 @@ def main():
 
     t0 = time.time()
     # a single unsupported API must not cost the whole matrix; each group is isolated
-    for fn in (reduce_cases, atomic_cases, dot_and_convert_cases, layout_cases):
+    for fn in (reduce_cases, atomic_cases, dot_and_convert_cases, layout_cases,
+               remaining_l6_cases):
         try:
             fn()
         except Exception as exc:
