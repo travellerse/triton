@@ -1244,3 +1244,55 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     tt.return
   }
 }
+
+// -----
+
+#laneBroadcast32 = #ttg.linear<{register = [], lane = [[1], [2], [4], [0], [0], [0]], warp = [[8], [16]], block = []}>
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.threads-per-warp" = 64 : i32} {
+  // When CDNA3/CDNA4 consolidate same-address lanes inside a wave (only done when the atomic result is
+  // unused), the consolidation has to agree with the atomic it feeds: a group holding {-1, 5} is a
+  // signed-max question, and reducing it with unsigned max loses the 5. gfx1250 does not take this
+  // path at all, so it only checks the atomic itself.
+  // CHECK-LABEL: @atomic_max_i32_signed_lane_broadcast
+  // GFX950-LABEL: @atomic_max_i32_signed_lane_broadcast
+  // GFX1250-LABEL: @atomic_max_i32_signed_lane_broadcast
+  tt.func private @atomic_max_i32_signed_lane_broadcast(%ptr: tensor<32x!tt.ptr<i32>, #laneBroadcast32>, %val: tensor<32xi32, #laneBroadcast32>) {
+    // CHECK: llvm.intr.smax
+    // CHECK-NOT: llvm.intr.umax
+    // CHECK: llvm.atomicrmw max
+    // GFX950: llvm.intr.smax
+    // GFX950-NOT: llvm.intr.umax
+    // GFX950: llvm.atomicrmw max
+    // GFX1250: llvm.atomicrmw max
+    %old = tt.atomic_rmw max, relaxed, gpu, %ptr, %val : (tensor<32x!tt.ptr<i32>, #laneBroadcast32>, tensor<32xi32, #laneBroadcast32>) -> tensor<32xi32, #laneBroadcast32>
+    tt.return
+  }
+  // CHECK-LABEL: @atomic_min_i32_signed_lane_broadcast
+  // GFX950-LABEL: @atomic_min_i32_signed_lane_broadcast
+  // GFX1250-LABEL: @atomic_min_i32_signed_lane_broadcast
+  tt.func private @atomic_min_i32_signed_lane_broadcast(%ptr: tensor<32x!tt.ptr<i32>, #laneBroadcast32>, %val: tensor<32xi32, #laneBroadcast32>) {
+    // CHECK: llvm.intr.smin
+    // CHECK-NOT: llvm.intr.umin
+    // CHECK: llvm.atomicrmw min
+    // GFX950: llvm.intr.smin
+    // GFX950: llvm.atomicrmw min
+    // GFX1250: llvm.atomicrmw min
+    %old = tt.atomic_rmw min, relaxed, gpu, %ptr, %val : (tensor<32x!tt.ptr<i32>, #laneBroadcast32>, tensor<32xi32, #laneBroadcast32>) -> tensor<32xi32, #laneBroadcast32>
+    tt.return
+  }
+  // The unsigned form must stay unsigned -- this is the control that keeps the fix from simply
+  // swapping which case is wrong.
+  // CHECK-LABEL: @atomic_umax_u32_lane_broadcast
+  // GFX950-LABEL: @atomic_umax_u32_lane_broadcast
+  // GFX1250-LABEL: @atomic_umax_u32_lane_broadcast
+  tt.func private @atomic_umax_u32_lane_broadcast(%ptr: tensor<32x!tt.ptr<i32>, #laneBroadcast32>, %val: tensor<32xi32, #laneBroadcast32>) {
+    // CHECK: llvm.intr.umax
+    // CHECK-NOT: llvm.intr.smax
+    // CHECK: llvm.atomicrmw umax
+    // GFX950: llvm.intr.umax
+    // GFX950: llvm.atomicrmw umax
+    // GFX1250: llvm.atomicrmw umax
+    %old = tt.atomic_rmw umax, relaxed, gpu, %ptr, %val : (tensor<32x!tt.ptr<i32>, #laneBroadcast32>, tensor<32xi32, #laneBroadcast32>) -> tensor<32xi32, #laneBroadcast32>
+    tt.return
+  }
+}
