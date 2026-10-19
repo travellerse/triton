@@ -97,16 +97,31 @@ The follow-up, which does not need Gluon at all, is whether the same register pr
 from the Triton frontend by changing what the pass is allowed to choose on RDNA2 — i.e. a
 `TritonGPU`-side tuning item rather than a hand-authored kernel. That has not been investigated.
 
-## Queued, and blocked on the device
+## Measured A/B (2026-10-20, native gfx1031)
 
-A stuck `rocprofv3` session of mine still holds the card (I do not kill processes), so the runs this
-result asks for are queued, not performed:
+The `--time` mode of the spill map now runs the first queued comparison. Two harness bugs had to be
+fixed first: the launches never passed `num_warps`, so the pinned 2-warp layouts were compiled
+against the default 4-warp launch and rejected by the verifier, and `time_both`'s `threads` argument
+was shadowed by the global default. With both fixed — same math, matching results in every arm:
 
-1. `64×64 / HD=128 / W=2`, pinned `[4,8]` vs auto, on device, batched launches with the A/A band —
-   does −28% spills become anything, given that the spill-free config was previously *slower*?
-2. A wider pinned sweep (order, `size_per_thread`, warps along the other axis) to see whether `[4,8]`
+| tile | warps | auto | pinned `[4,8]` | delta | A/A band |
+| --- | --- | --- | --- | --- | --- |
+| 64x64 HD=128 | 2 | 4.104 ms | 6.408 ms | **+56.2%** | 0.81% |
+| 64x64 HD=128 | 1 | 16.412 ms | 8.803 ms | **−46.4%** | 0.02% |
+| 64x32 HD=128 | 1 | 15.519 ms | 13.834 ms | −10.9% | 0.99% |
+| 64x64 HD=64 | 2 | 1.441 ms | 1.492 ms | +3.5% | 1.12% |
+
+The pinned layout is **not uniformly better**: it is a large win at one warp, a large loss at two
+warps on the same tile, and a wash (slightly outside the A/A band) on the HD=64 tile. That matches the
+earlier on-device lesson that spill counts do not rank speed; pinning is a per-configuration choice,
+not a default. The w=1 win also needs context: 32 lanes per 64x64 tile is not the production shape,
+so it is a lead about the selection heuristic, not a deployable result.
+
+## Still queued
+
+1. A wider pinned sweep (order, `size_per_thread`, warps along the other axis) to see whether `[4,8]`
    is the best of a family or a coincidence of two probes.
-3. Finish the Gluon arm with the online softmax (explicit `convert_layout` on `m_i`/`l_i`/`alpha` at
+2. Finish the Gluon arm with the online softmax (explicit `convert_layout` on `m_i`/`l_i`/`alpha` at
    the score-tile ↔ accumulator boundary) and re-run the two pinned variants. The current result is
    for the inner step only, and the reductions are exactly the part that keeps `m_i`, `l_i`, `s` and
    `p` live at once — the register pressure this whole line of work is about — so the −28% figure is

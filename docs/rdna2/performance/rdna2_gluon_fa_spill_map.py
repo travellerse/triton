@@ -222,19 +222,22 @@ def time_both(bm, bn, hd, warps, threads, reps=5, batch=40, ramp=8.0):
 
     import torch
 
+    global THREADS
+    THREADS = list(threads)
+
     sk = 4096
     q = torch.randn(bm, hd, device="cuda", dtype=torch.float16)
     k = torch.randn(sk, hd, device="cuda", dtype=torch.float16)
     v = torch.randn(sk, hd, device="cuda", dtype=torch.float16)
 
-    def bench(fn, grid, args):
-        fn[grid](*args)
+    def bench(fn, grid, args, num_warps):
+        fn[grid](*args, num_warps=num_warps)
         torch.cuda.synchronize()
         out = []
         for _ in range(reps):
             t0 = time.perf_counter()
             for _ in range(batch):
-                fn[grid](*args)
+                fn[grid](*args, num_warps=num_warps)
             torch.cuda.synchronize()
             out.append((time.perf_counter() - t0) / batch * 1e3)
         return statistics.median(out)
@@ -242,13 +245,13 @@ def time_both(bm, bn, hd, warps, threads, reps=5, batch=40, ramp=8.0):
     def triton_run():
         o = torch.empty(bm, hd, device="cuda", dtype=torch.float32)
         args = (q, k, v, o, hd, sk, 0.125)
-        return bench(fa_plain, (1,), args + (bm, bn, hd)), o
+        return bench(fa_plain, (1,), args + (bm, bn, hd), warps), o
 
     def gluon_run():
         L = gluon_layouts(bm, bn, hd, warps)
         o = torch.empty(bm, hd, device="cuda", dtype=torch.float32)
         args = (q, k, v, o, hd, sk, 0.125)
-        return bench(fa_gluon, (1,), args + (bm, bn, hd, *L.values())), o
+        return bench(fa_gluon, (1,), args + (bm, bn, hd, *L.values()), warps), o
 
     t_ramp = time.perf_counter()
     while time.perf_counter() - t_ramp < ramp:
