@@ -1,0 +1,122 @@
+{
+ "variant": "head_with_P5",
+ "identity": {
+  "physical_device": "AMD Radeon RX 6700 XT",
+  "gcnArchName": "gfx1030",
+  "warp_size": 32,
+  "multi_processor_count": 20,
+  "HSA_OVERRIDE_GFX_VERSION": "10.3.0",
+  "triton_version": "3.9.0",
+  "triton_package": "/home/trave/code/triton/python/triton",
+  "torch": "2.14.1"
+ },
+ "reps": 7,
+ "inner_launches": 50,
+ "warmup": 3,
+ "results": {
+  "trans_1024x1024_f32": {
+   "samples_medians_ms": [
+    0.02,
+    0.021,
+    0.021
+   ],
+   "median_ms": 0.021,
+   "aa_spread_ms": 0.0,
+   "peak_allocated_mib": 128.0
+  },
+  "trans_2048x512_f32": {
+   "samples_medians_ms": [
+    0.022,
+    0.022,
+    0.022
+   ],
+   "median_ms": 0.022,
+   "aa_spread_ms": 0.0,
+   "peak_allocated_mib": 44.0
+  },
+  "rms_5120x1024_f16": {
+   "samples_medians_ms": [
+    0.029,
+    0.029,
+    0.029
+   ],
+   "median_ms": 0.029,
+   "aa_spread_ms": 0.0,
+   "peak_allocated_mib": 62.0
+  },
+  "rms_5120x4096_f16": {
+   "samples_medians_ms": [
+    0.088,
+    0.09,
+    0.088
+   ],
+   "median_ms": 0.088,
+   "aa_spread_ms": 0.002,
+   "peak_allocated_mib": 152.0
+  },
+  "softmax_5120x1024_f16": {
+   "samples_medians_ms": [
+    0.032,
+    0.032,
+    0.032
+   ],
+   "median_ms": 0.032,
+   "aa_spread_ms": 0.0,
+   "peak_allocated_mib": 92.0
+  },
+  "dot_64x64x1024_f16_1tile": {
+   "samples_medians_ms": [
+    0.049,
+    0.049,
+    0.049
+   ],
+   "median_ms": 0.049,
+   "aa_spread_ms": 0.0,
+   "peak_allocated_mib": 46.0
+  }
+ },
+ "resource_info": {
+  "k_trans::[('*fp32', 'DS'), ('*fp32', 'DS'), ('constexpr', 1024), ('constexpr', 1024), ('constexpr', 128), ('constexpr', 128)]{'num_warps': 4, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 65536
+  },
+  "k_trans::[('*fp32', 'DS'), ('*fp32', 'DS'), ('constexpr', 2048), ('constexpr', 512), ('constexpr', 128), ('constexpr', 128)]{'num_warps': 4, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 65536
+  },
+  "k_rms::[('*fp16', 'DS'), ('*fp16', 'DS'), ('constexpr', 1024), ('constexpr', 1024)]{'num_warps': 4, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 16
+  },
+  "k_rms::[('*fp16', 'DS'), ('*fp16', 'DS'), ('constexpr', 4096), ('constexpr', 4096)]{'num_warps': 8, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 32
+  },
+  "k_softmax::[('*fp16', 'DS'), ('*fp16', 'DS'), ('constexpr', 1024), ('constexpr', 1024)]{'num_warps': 4, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 16
+  },
+  "k_dot::[('*fp16', 'DS'), ('*fp16', 'DS'), ('*fp16', 'DS'), ('constexpr', 1024), ('constexpr', 64), ('constexpr', 64), ('constexpr', 64)]{'num_warps': 4, 'debug': False, 'instrumentation_mode': '', 'fpsan_homomorphic_casts': False}": {
+   "global_scratch_align": 1,
+   "global_scratch_size": 0,
+   "profile_scratch_align": 1,
+   "profile_scratch_size": 0,
+   "shared": 16384
+  }
+ }
+}
