@@ -548,6 +548,90 @@ getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(triton::CacheModifier cm,
   return aux;
 }
 
+// Create the auxiliary/cache-policy value for RDNA2 (GFX10) buffer ops
+//
+// Where each aux bit lands, cross-checked against the AMD "RDNA 2" ISA Reference Guide,
+// section 13.6.1 (MTBUF field table) and against the machine words Triton's own LLVM emits
+// (test/LLVMIR/rdna2-buffer-load-cache-policy.ll pins both):
+//   aux bit 0 = GLC -> instr bit 14
+//   aux bit 2 = DLC -> instr bit 15
+//   aux bit 1 = SLC -> instr bit 54
+//   aux bits 3 (SWZ) and 4 (SCC) -> no field on these ops, dropped by the encoder
+//
+// What the combinations do is taken from the ISA guide's own RDNA2 behaviour tables (section
+// 8.1.10), not from the CDNA table:
+//   Table 38, vector loads   SLC,DLC = 0,0 -> L2 LRU,     L1 hit-LRU
+//                            SLC,DLC = 0,1 -> L2 LRU,     L1 miss-evict
+//                            SLC,DLC = 1,0 -> L2 stream,  L1 hit-LRU
+//                            SLC,DLC = 1,1 -> L2 hit-no-allocate, L1 miss-evict
+//   Table 39, stores/atomics SLC,DLC = 0,0 -> L2 LRU
+//                            SLC,DLC = 0,1 -> L2 bypass
+//                            SLC,DLC = 1,0 -> L2 stream (hit leaves the line, does not reset age)
+//                            SLC,DLC = 1,1 -> L2 hit-no-allocate
+//   GLC for a load: the access intentionally misses L0 and is fetched from L2, invalidating a
+//   matching L0 line. GLC for a store: writes miss L0 and go through to L2 with no L0
+//   persistence across waves. L1 is already bypassed-but-coherent for stores, and L0 is always
+//   miss-evict for stores.
+//
+// -------+-----+-----+-----+-----+-----------+-------------------------------------------------
+// Op     | cm  | GLC | SLC | DLC | aux value | RDNA2 behaviour achieved
+// -------+-----+-----+-----+-----+-----------+-------------------------------------------------
+// Load   | .ca |  0  |  0  |  0  |  0        | L0 hit, L1 hit-LRU, L2 LRU
+//        | .cg |  1  |  0  |  1  |  5        | L0 bypassed, L1 miss-evict, L2 still LRU
+//        | .cs |  0  |  1  |  1  |  6        | L1 miss-evict, L2 hit-no-allocate (streaming)
+//        | .cv |  1  |  0  |  1  |  5        | same as .cg; see caveat below
+// -------+-----+-----+-----+-----+-----------+-------------------------------------------------
+// Store  | .wb |  0  |  0  |  0  |  0        | L2 LRU
+//        | .cg |  0  |  0  |  0  |  0        | L2 LRU; L1 is already bypassed for stores
+//        | .cs |  0  |  1  |  0  |  2        | L2 stream
+//        | .wt |  1  |  0  |  1  |  5        | L2 bypass, no L0 persistence
+// -------+-----+-----+-----+-----+-----------+-------------------------------------------------
+//
+// Two caveats, both limits of the ISA rather than of this table:
+//   .cv collapses onto .cg because no load encoding can bypass L2; the part of .cv that is
+//   still missing is the system-scope ordering, which LLVM obtains with a s_waitcnt, not with
+//   an aux value (SIGfx10CacheControl::enableVolatileAndOrNonTemporal does GLC|DLC + wait).
+//   .wt becomes "L2 bypass", which is write-around rather than architecturally
+//   write-through-to-system-memory.
+//
+// Do not reuse this helper for buffer atomics: on GFX10 GLC is not a cache control there, it
+// selects whether the pre-op value is returned (ISA guide section 8.1.10, "Atomics").
+//
+// Only buffer (and masked-buffer) ops consult this table; global loads carry the hint as
+// !nontemporal metadata instead.
+static int32_t getCtrlBitsForCacheModifierOnRDNA2(triton::CacheModifier cm,
+                                                  bool isLoad) {
+  const int glc = 0b1, slc = 0b10, dlc = 0b100;
+  int32_t aux = 0;
+  switch (cm) {
+  case triton::CacheModifier::CA:
+    aux = 0;
+    break;
+  case triton::CacheModifier::CG:
+    if (isLoad)
+      aux = glc | dlc;
+    break;
+  case triton::CacheModifier::CS:
+    aux = isLoad ? (slc | dlc) : slc;
+    break;
+  case triton::CacheModifier::CV:
+    assert(isLoad);
+    aux = glc | dlc;
+    break;
+  case triton::CacheModifier::WB:
+    assert(!isLoad);
+    aux = 0;
+    break;
+  case triton::CacheModifier::WT:
+    assert(!isLoad);
+    aux = glc | dlc;
+    break;
+  default:
+    aux = 0;
+  }
+  return aux;
+}
+
 // Create the auxiliary/cachepolicy value for RDNA3 (and 3.5) buffer ops
 //
 // LLVM CPol bit layout (from SIDefines.h):
@@ -726,22 +810,14 @@ int32_t getCtrlBitsForCacheModifierOnTarget(
   switch (targetInfo.getISAFamily()) {
   case ISAFamily::CDNA3:
   case ISAFamily::CDNA4:
-  // GFX10 accepts the same aux operand: LLVM masks the cache-policy value with ALL_pregfx12 for
-  // RDNA parts as well as CDNA (SIISelLowering.cpp, lowerGlobalLoadStore), so without this case
-  // every .cg/.cs/.cv/.wt on RDNA2 was silently lowered to aux = 0 and dropped.
-  //
-  // Verified on gfx1030: the emitted machine code now differs per modifier (an unmodified load
-  // encodes DC308000, .cg/.cs add LLVM's `slc` field, .cv adds `glc dlc`), and results are
-  // bitwise identical to the unmodified kernel for every load and store modifier. No performance
-  // effect was measurable -- two admitted runs disagreed even in sign -- so this is about
-  // honouring the request, not about speed. See
-  // docs/rdna2/performance/rdna2-cache-modifiers-enabled.md.
-  //
-  // RDNA3's table is deliberately not reused: it sets bit 2, whose meaning on GFX10 is not
-  // established here, whereas these SC0/NT/SC1 positions are the ones LLVM treats as valid for
-  // every pre-GFX12 part.
-  case ISAFamily::RDNA2:
     return getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(cm, isLoad);
+  case ISAFamily::RDNA2:
+    // GFX10 buffer ops expose GLC (aux bit 0), SLC (bit 1) and DLC (bit 2); bits 3 and 4 are
+    // dropped by the encoder even though LLVM's pre-GFX12 validity mask admits them. That is why
+    // neither neighbour works: the CDNA table puts its third field at bit 4, which gfx10 discards,
+    // and the RDNA3 table reads DLC as the GFX11+ "MALL no-allocate" hint, which it is not on
+    // gfx10.
+    return getCtrlBitsForCacheModifierOnRDNA2(cm, isLoad);
   case ISAFamily::RDNA3:
   case ISAFamily::RDNA4m:
     return getCtrlBitsForCacheModifierOnRDNA3(cm, isLoad);
