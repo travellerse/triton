@@ -25,8 +25,11 @@ from triton.backends.compiler import GPUTarget
 from triton.compiler import ASTSource
 
 
-def make_kernel(pack_a, pack_b, fmt_a, fmt_b):
-    """build a @triton.jit kernel for the given formats; pack_* = elements per byte."""
+def make_kernel(pack_a, pack_b, fmt_a, fmt_b, bits):
+    """build a @triton.jit kernel for the given formats; pack_* = elements per byte.
+
+    bits is the storage width of the operand elements: 8 for e2m1/e4m3/e5m2, 16 for
+    bf16/fp16 (the frontend bitcasts u8/u16 operands to the named format)."""
 
     @triton.jit
     def kern(a_base, b_base, a_scale, b_scale, out,
@@ -53,9 +56,14 @@ def make_kernel(pack_a, pack_b, fmt_a, fmt_b):
 
 
 CASES = [
-    ("mxfp8", 1, 1, "e4m3", "e4m3"),
-    ("mxfp4", 2, 2, "e2m1", "e2m1"),
-    ("mixed", 1, 2, "e4m3", "e2m1"),
+    # every format the frontend accepts in dot_scaled's `allowed_formats`
+    ("mxfp8", 1, 1, "e4m3", "e4m3", 8),
+    ("mxfp4", 2, 2, "e2m1", "e2m1", 8),
+    ("mixed", 1, 2, "e4m3", "e2m1", 8),
+    ("e5m2", 1, 1, "e5m2", "e5m2", 8),
+    ("bf16", 1, 1, "bf16", "bf16", 16),
+    ("fp16", 1, 1, "fp16", "fp16", 16),
+    ("f16-mixed", 1, 1, "fp16", "bf16", 16),
 ]
 
 INTERESTING = re.compile(r"v_mfma\w*|v_wmma\w*|v_dot4c_i32_i8|v_dot2c_f32_f16|v_dot2\w*|"
@@ -64,9 +72,10 @@ INTERESTING = re.compile(r"v_mfma\w*|v_wmma\w*|v_dot4c_i32_i8|v_dot2c_f32_f16|v_
 
 def run(arch, block_m, block_n, block_k, warps):
     print(f"\n===== {arch} (BM={block_m} BN={block_n} BK={block_k} warps={warps}) =====")
-    for name, pack_a, pack_b, fmt_a, fmt_b in CASES:
-        fn = make_kernel(pack_a, pack_b, fmt_a, fmt_b)
-        sig = {"a_base": "*u8", "b_base": "*u8", "a_scale": "*u8", "b_scale": "*u8",
+    for name, pack_a, pack_b, fmt_a, fmt_b, bits in CASES:
+        fn = make_kernel(pack_a, pack_b, fmt_a, fmt_b, bits)
+        ptr_ty = "*u8" if bits == 8 else "*u16"
+        sig = {"a_base": ptr_ty, "b_base": ptr_ty, "a_scale": "*u8", "b_scale": "*u8",
                "out": "*fp32", "BLOCK_M": "constexpr", "BLOCK_N": "constexpr",
                "BLOCK_K": "constexpr", "PACK_A": "constexpr", "PACK_B": "constexpr",
                "FMT_A": "constexpr", "FMT_B": "constexpr"}

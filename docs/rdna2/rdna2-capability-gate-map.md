@@ -127,8 +127,9 @@ RDNA3. Two pieces of evidence:
 * The compile-only probe
   [rdna2_dot_scaled_compile_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_dot_scaled_compile_probe.py)
   walks the whole frontend-to-LLVM pipeline against an explicit `GPUTarget` (no device, no launch).
-  All three formats compile on gfx1030 and native gfx1031, with no reported spills at the probe's
-  32x32x64 / 4-warp shape:
+  Every format the frontend accepts (`e2m1`, `e4m3`, `e5m2`, `bf16`, `fp16`, plus mixed
+  `e4m3×e2m1` and `fp16×bf16`) compiles on gfx1030 and native gfx1031, with no reported spills at the
+  probe's 32x32x64 / 4-warp shape:
 
 | arch | mxfp8 | mxfp4 | mixed | dot path in `.amdgcn` |
 | --- | --- | --- | --- | --- |
@@ -136,6 +137,11 @@ RDNA3. Two pieces of evidence:
 | gfx1100 | 1532 | 1404 | 1579 | `v_wmma_f32_16x16x16_bf16` x4 |
 | gfx1200 | 1006 | 835 | 964 | `v_wmma_f32_16x16x16_bf16` x4 |
 | gfx942 | 1003 | 924 | 992 | `v_mfma_f32_32x32x8_bf16` x8 |
+
+The other formats tell the same story: e5m2, bf16 and the fp16×bf16 mix compile to the FMA dot on
+gfx103x (1970–2702 instructions), while plain fp16 is the one case that reaches RDNA2's packed dot —
+256 `v_dot2c_f32_f16` calls in 907 instructions. Nothing in the format set falls off the family's
+decomposition.
 
 Instruction counts are totals and not comparable across families: gfx103x executes the dot as
 per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
