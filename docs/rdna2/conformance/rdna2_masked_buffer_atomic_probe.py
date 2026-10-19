@@ -14,15 +14,24 @@ suppression was treated as undocumented. Two things have since been established 
   masked buffer atomics already run through this path on shipping targets; what is unproven is only
   whether the *comparison* behaves the same on gfx10.
 
-Why a guard region cannot answer it
------------------------------------
-The address a suppressed lane would use is not inside the tensor: the mask substitutes
-base + 0x80000000 bytes. If hardware compares that offset unsigned, the lane is dropped (correct).
-If it compared signed, the lane would write at base - 2 GiB -- outside the allocation, so an
-in-buffer sentinel would stay clean either way and prove nothing. The distinguishable failure is a
-memory violation, because base - 2 GiB is essentially never mapped on a 12 GiB card, and ROCm
-reports that as a GPU fault. So the assertion here is "the kernel completes and the visible lanes
-are exact", which is a fault-or-pass test rather than a corruption test.
+What this probe adds over the static evidence
+---------------------------------------------
+A guard region cannot discriminate the open question: a lane that escaped suppression writes at
+base + 0x80000000, or base - 2 GiB if the offset compared signed -- outside the tensor either way,
+so in-buffer sentinels stay clean under both readings. The observable is a memory violation, since
+base - 2 GiB is essentially never mapped on a 12 GiB card. So this is a fault-or-pass test.
+
+The signed-comparison branch is already largely falsified without it: RDNA2's masked *buffer loads*
+use the same 0x80000000 sentinel against the same descriptor field, and under a signed reading they
+would return garbage instead of the hardware's out-of-range zero, which the on-device conformance
+probe (43/43, masked loads with other=0 included) would have caught. This probe makes the atomics
+themselves a measured fact instead of an inference, and it is the last item between the current gate
+and enabling the integer subset.
+
+For contrast, on gfx1100 the same source lowers to `buffer_atomic_and_b32` with that sentinel-fed
+address, so the mechanism is live on a shipping target today; on gfx1030 it lowers to
+EXEC-masked branching plus a CAS loop, which is why the gate currently costs 8 atomics where RDNA3
+spends 4.
 
 Run under the GPU admission wrapper. Requires buffer atomics to actually be emitted on RDNA2, which
 today they are not -- see the note at the bottom; on gfx1100 the same script exercises the live path.

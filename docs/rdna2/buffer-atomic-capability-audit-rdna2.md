@@ -67,9 +67,28 @@ Two things must be settled with hardware, and neither is answerable statically:
    atomic over a guard region whose contents are known, with the mask false, and check whether the
    guard bytes change. Any lane written = signed comparison = the current code is already unsafe for
    *every* masked buffer access on RDNA, atomics included, which would make this more urgent than
-   the gate. No list change should be made before that answer exists.
+   the gate. Given the load-side observation above, the gate can now be widened behind the probe as
+   a confirmation rather than as the first test of the mechanism; that is a change of confidence,
+   not of order of work: run the probe, then enable, then measure the CAS-to-single-instruction win
+   this file's own instruction counts predict.
 
-   Two things shrink that residual, and both are worth stating so the risk is not overstated:
+   That residual is now largely closed by evidence rather than argument. Comparing how a masked
+   `tl.atomic_and` lowers on the two families:
+
+   * **gfx1100** emits `buffer_atomic_and_b32` fed by a `v_cndmask … 0x80000000` address — RDNA3's
+     masked atomics rely on hardware OOB suppression today, in shipped code;
+   * **gfx1030** emits neither: it guards with `v_cmpx_gt_i32_e32` + `s_cbranch_execz` and a CAS
+     loop, so RDNA2's masked atomics currently use EXEC branching, while RDNA2's masked *buffer
+     loads* in the same kernels already use the `0x80000000` sentinel.
+
+   That last point is the discriminator the guard-region test cannot provide: under a signed offset
+   comparison, a masked-off buffer load on RDNA2 would read garbage where the hardware is supposed
+   to return zero, and masked loads with `other=0` are covered by the on-device conformance probe
+   (43/43 at native gfx1031). The comparison is therefore unsigned on this part, by observation on
+   the load side of the very mechanism in question — `OOB_select` is one descriptor field shared by
+   loads, stores and atomics, and note 3 puts atomics in the same all-or-nothing check.
+
+   Two things still shrink the residual, and both are worth stating so the risk is not overstated:
    the mechanism is **already in shipped use** -- RDNA3/RDNA4 build the descriptor with the same
    `OOB_select=3` flags and *do* have `supportsBufferAtomicRMW()` enabled, so masked buffer atomics
    already run through this path on shipping targets; the open question is only whether gfx10
