@@ -1,0 +1,8 @@
+gate_up  24576x4096: dequant   10.193 ms (  26.5 GB/s) | copy  1.288 ms ( 210.0 GB/s) | fill  0.613 ms ( 328.5 GB/s) | gap x7.91
+down     4096x12288: dequant    5.138 ms (  26.3 GB/s) | copy  0.655 ms ( 206.4 GB/s) | fill  0.155 ms ( 649.1 GB/s) | gap x7.84
+q_proj   4096x4096: dequant    1.499 ms (  30.1 GB/s) | copy  0.102 ms ( 441.1 GB/s) | fill  0.069 ms ( 487.1 GB/s) | gap x14.67
+
+dequant share of step (this model only): 682.5 ms = 7.1%  wrote /tmp/q21-p1/dequant_baseline.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402599-108900-p14-deqbase
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10687 MiB, MemAvailable 20088 MiB
+  ! stale lock record '106252 p13-downview 3072\n96': pid 106252 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

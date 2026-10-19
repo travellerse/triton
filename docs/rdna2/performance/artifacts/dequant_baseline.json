@@ -1,0 +1,68 @@
+{
+ "identity": {
+  "device": "AMD Radeon RX 6700 XT",
+  "gcn": "gfx1030",
+  "override": "10.3.0"
+ },
+ "shapes": [
+  {
+   "name": "gate_up",
+   "shape": [
+    24576,
+    4096
+   ],
+   "params": 100663296,
+   "blocks": 393216,
+   "dequant_ms": 10.193,
+   "copy_ms": 1.288,
+   "fill_ms": 0.613,
+   "dequant_GBps": 26.5,
+   "copy_GBps": 210.0,
+   "fill_GBps": 328.5,
+   "gap_vs_copy_x": 7.91,
+   "max_abs_vs_itself": NaN
+  },
+  {
+   "name": "down",
+   "shape": [
+    4096,
+    12288
+   ],
+   "params": 50331648,
+   "blocks": 196608,
+   "dequant_ms": 5.138,
+   "copy_ms": 0.655,
+   "fill_ms": 0.155,
+   "dequant_GBps": 26.3,
+   "copy_GBps": 206.4,
+   "fill_GBps": 649.1,
+   "gap_vs_copy_x": 7.84,
+   "max_abs_vs_itself": NaN
+  },
+  {
+   "name": "q_proj",
+   "shape": [
+    4096,
+    4096
+   ],
+   "params": 16777216,
+   "blocks": 65536,
+   "dequant_ms": 1.499,
+   "copy_ms": 0.102,
+   "fill_ms": 0.069,
+   "dequant_GBps": 30.1,
+   "copy_GBps": 441.1,
+   "fill_GBps": 487.1,
+   "gap_vs_copy_x": 14.67,
+   "max_abs_vs_itself": NaN
+  }
+ ],
+ "step_estimate": {
+  "gate_up": 326.2,
+  "down": 164.4,
+  "q_proj": 191.9
+ },
+ "step_estimate_total_ms": 682.5,
+ "step_reference_ms": 9616.8,
+ "step_pct": 7.1
+}
