@@ -1,0 +1,216 @@
+{
+ "cfg": {
+  "BPP": 8,
+  "num_warps": 4
+ },
+ "exactness": [
+  {
+   "n_blocks": 1,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 5,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 8,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 17,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 256,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 4097,
+   "mode": "finite",
+   "bitwise_equal": true,
+   "nan_count": 0
+  },
+  {
+   "n_blocks": 1,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 3,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 8,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 9,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 64,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 100,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 1023,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 4096,
+   "bitwise_equal": true,
+   "max_abs": NaN
+  },
+  {
+   "n_blocks": 64,
+   "dtype": "torch.float16",
+   "bitwise_equal": true
+  },
+  {
+   "n_blocks": 64,
+   "dtype": "torch.bfloat16",
+   "bitwise_equal": true
+  }
+ ],
+ "bench": [
+  {
+   "weight": "gate_up",
+   "bpp": 8,
+   "warps": 4,
+   "triton_ms": 1.031,
+   "torch_ms": 10.183,
+   "speedup": 9.88,
+   "triton_GBps": 262.4,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "gate_up",
+   "bpp": 16,
+   "warps": 8,
+   "triton_ms": 1.0,
+   "torch_ms": 10.291,
+   "speedup": 10.29,
+   "triton_GBps": 270.5,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "gate_up",
+   "bpp": 4,
+   "warps": 4,
+   "triton_ms": 0.965,
+   "torch_ms": 10.298,
+   "speedup": 10.68,
+   "triton_GBps": 280.5,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "gate_up",
+   "bpp": 1,
+   "warps": 4,
+   "triton_ms": 0.968,
+   "torch_ms": 10.31,
+   "speedup": 10.65,
+   "triton_GBps": 279.6,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "down",
+   "bpp": 8,
+   "warps": 4,
+   "triton_ms": 0.514,
+   "torch_ms": 5.132,
+   "speedup": 9.98,
+   "triton_GBps": 263.2,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "down",
+   "bpp": 16,
+   "warps": 8,
+   "triton_ms": 0.484,
+   "torch_ms": 5.203,
+   "speedup": 10.75,
+   "triton_GBps": 279.6,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "down",
+   "bpp": 4,
+   "warps": 4,
+   "triton_ms": 0.468,
+   "torch_ms": 5.163,
+   "speedup": 11.04,
+   "triton_GBps": 289.3,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "down",
+   "bpp": 1,
+   "warps": 4,
+   "triton_ms": 0.487,
+   "torch_ms": 5.16,
+   "speedup": 10.6,
+   "triton_GBps": 277.8,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "q_proj",
+   "bpp": 8,
+   "warps": 4,
+   "triton_ms": 0.089,
+   "torch_ms": 1.506,
+   "speedup": 16.9,
+   "triton_GBps": 506.0,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "q_proj",
+   "bpp": 16,
+   "warps": 8,
+   "triton_ms": 0.09,
+   "torch_ms": 1.506,
+   "speedup": 16.78,
+   "triton_GBps": 502.2,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "q_proj",
+   "bpp": 4,
+   "warps": 4,
+   "triton_ms": 0.089,
+   "torch_ms": 1.504,
+   "speedup": 16.9,
+   "triton_GBps": 506.5,
+   "bitwise_vs_torch": true
+  },
+  {
+   "weight": "q_proj",
+   "bpp": 1,
+   "warps": 4,
+   "triton_ms": 0.15,
+   "torch_ms": 1.511,
+   "speedup": 10.07,
+   "triton_GBps": 300.4,
+   "bitwise_vs_torch": true
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+[finite] n_blocks=     1 bitwise=True nans=0
+[finite] n_blocks=     5 bitwise=True nans=0
+[finite] n_blocks=     8 bitwise=True nans=0
+[finite] n_blocks=    17 bitwise=True nans=0
+[finite] n_blocks=   256 bitwise=True nans=0
+[finite] n_blocks=  4097 bitwise=True nans=0
+[exact] n_blocks=     1 bitwise=True max_abs=nan
+[exact] n_blocks=     3 bitwise=True max_abs=nan
+[exact] n_blocks=     8 bitwise=True max_abs=nan
+[exact] n_blocks=     9 bitwise=True max_abs=nan
+[exact] n_blocks=    64 bitwise=True max_abs=nan
+[exact] n_blocks=   100 bitwise=True max_abs=nan
+[exact] n_blocks=  1023 bitwise=True max_abs=nan
+[exact] n_blocks=  4096 bitwise=True max_abs=nan
+[exact] dtype=torch.float16 bitwise=True
+[exact] dtype=torch.bfloat16 bitwise=False
+exactness failures: 1 / 16  wrote /tmp/q21-p1/q5k_triton.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402956-121312-p15-q5k-exact4
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10321 MiB, MemAvailable 17349 MiB
+  ! stale lock record '120890 p15-q5k-exact3 2048': pid 120890 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
