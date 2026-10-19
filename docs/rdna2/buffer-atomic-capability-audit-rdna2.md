@@ -109,6 +109,21 @@ Two things must be settled with hardware, and neither is answerable statically:
    atomic path must not share a table — the RDNA2 cache helper says so explicitly, and any atomic
    work has to respect it.
 
+## The signed min/max refusal is a cross-target gap, and it hides a structural bug
+
+`ConvertToBufferOps` refuses `RMWOp::MIN`/`MAX` on an integer for **every** target ("signed integer
+min/max RMW operations use generic atomic lowering"), even though `buffer_atomic_smin`/`smax` select on
+gfx1030, gfx1100 and gfx942 alike (`llc -mcpu=...` on
+`llvm.amdgcn.raw.ptr.buffer.atomic.{smin,smax}.i32` and the `.i64` `_x2` forms). RDNA2 now bypasses that
+refusal through the per-op subset gate; RDNA3 and CDNA still pay the CAS loop, which is the remaining
+cross-target win.
+
+The refusal is also where the structure was wrong: it was an early-return, and the floating-point check
+underneath it (`supportsBufferAtomicFMinMax`) is **not guarded by a type test** -- it answers false for
+`i32` -- so the first attempt to let RDNA2 through fell straight into the float refusal and changed
+nothing. Anyone widening it further must keep the two branches separated by type, which is what the
+code does now (`if integer / else float`).
+
 ## Blocked, and what unblocks it
 
 Runtime is currently unavailable to me: an earlier `rocprofv3` session of mine is stuck holding the
@@ -116,14 +131,47 @@ admission lock (its first Triton dispatch never completed and the tool ignores `
 standing constraints are "do not kill or signal any process" and "zero launches unless the state is
 `EXCLUSIVE_COOPERATIVE_LOCK`". Preflight therefore reports `state=BUSY, cooperative lock held by
 pid 260702, KFD PID 260737`. Unblocking needs that process ended by its owner — after which the
-validation queue is:
+validation queue is (the subset is already merged, so this validates shipped behaviour rather than
+gating a merge):
 
-* unmasked i32/i64 `and/or/xor/umin/umax` and f32 `min/max` buffer atomics on gfx1030 *and* native
-  gfx1031, with an A/A control in every case;
+* unmasked i32/i64 `and/or/xor/umin/umax` and signed `min/max` buffer atomics on gfx1030 *and* native
+  gfx1031, with an A/A control in every case — `performance/rdna2_buffer_atomic_isa_probe.py` already
+  compiles exactly those cases and reports `buffer_atomic_*` versus `global_atomic_cmpswap` per case, so
+  the device version adds value checking, not kernel authoring;
 * a deliberately masked atomic case to answer the lane-suppression question, written so a wrong
   answer shows up as a detected corruption rather than a silent OOB write;
-* only then widen `supportsBufferAtomicRMW()` / `supportsBufferAtomicFMinMax()`, each in its own
-  commit with its lit test.
+* the measured effect of the change itself: contended-atomic throughput against a build without the
+  subset, because "one instruction instead of a CAS retry loop" is a static claim that has not been
+  timed on this card;
+* only after those, widen `supportsBufferAtomicRMW()` / `supportsBufferAtomicFMinMax()` for the other
+  families, each in its own commit with its lit test, and re-examine whether `enableIntraWaveReduce`
+  should extend past CDNA3/CDNA4 now that RDNA2's contention path is a single instruction.
+
+Float `min/max` are deliberately **not** in this queue: `buffer_atomic_fmin/fmax` select fine, but
+`tl.atomic_max/min` on a float never reaches this pass as `RMWOp::MAX` on a float (the frontend bitcasts
+and uses the signed/unsigned integer ordering trick), so enabling them is a NaN and ±0 semantics question
+rather than a capability question.
+
+## End to end on the real ISA text (compile-only, no device)
+
+`performance/rdna2_buffer_atomic_isa_probe.py` compiles `tl.atomic_*` kernels through the whole pipeline
+and greps the emitted `.amdgcn`. With the subset enabled, on **gfx1030**:
+
+| case | instruction emitted | reading |
+| --- | --- | --- |
+| `and`/`or`/`xor` i32 | `buffer_atomic_and` / `_or` / `_xor` | one instruction, instead of the generic path's `global_atomic_cmpswap` retry loop (measured on `atomicrmw and i32` with llc below) |
+| `max`/`min` i32 (signed) | `buffer_atomic_smax` / `buffer_atomic_smin` | the widening in this session |
+| `max`/`min` u32 | `buffer_atomic_umax` / `buffer_atomic_umin` | |
+| `and`/`max` i64 | `buffer_atomic_and_x2`, `buffer_atomic_smax_x2` | the `_X2` 64-bit forms exist and are reached |
+| `add` i32, `xchg` i32 | `global_atomic_add`, `global_atomic_swap`, **0 cmpswap** | controls: these were already native, so they were not worth moving |
+| `and` i32 **with a user mask** | `global_atomic_cmpswap` (8 sites) | the provably-active-lane gate is not decorative: a masked atomic cannot reach the buffer path |
+
+The same probe on **gfx1100** (gate-open family, control) emits `buffer_atomic_and_b32` for the masked
+case but still `global_atomic_cmpswap_b32` for signed `max`/`min` -- which is the cross-target refusal
+above, observed rather than inferred.
+
+Grade: pass, ROCDL, MI lowering and assembler all agree on RDNA2, and the mask gate holds at the ISA
+level. Still not proven: what a bounds-suppressed lane does, because that needs the device.
 
 ## What the generic path costs each operation today (toolchain-measured, no device)
 
