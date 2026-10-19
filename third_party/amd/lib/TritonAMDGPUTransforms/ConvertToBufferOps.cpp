@@ -19,8 +19,10 @@
 #include "triton/Dialect/Triton/IR/Dialect.h"
 #include "triton/Dialect/Triton/IR/Utility.h"
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
+#include "triton/Dialect/TritonGPU/IR/LinearLayoutConversions.h"
 #include "triton/Dialect/TritonGPU/Transforms/Utility.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #undef DEBUG_TYPE
@@ -54,6 +56,43 @@ bool isSplatOneConstTensor(const Value v) {
     return denseAttr.isSplat() && denseAttr.getSplatValue<APInt>().isOne();
 
   return false;
+}
+
+// RDNA2 (gfx103x) can encode integer buffer atomic RMW instructions, but the
+// buffer path sends any lane whose predicate is false to an out-of-range offset
+// (0x8000_0000) and relies on the descriptor's range check to drop it. The RDNA2
+// guide does say buffer atomics are range-checked -- all-or-nothing per
+// instruction (section 8.1, Table 35 note 3) -- yet 0x8000_0000 only exceeds
+// numRecords = 0x7FFF_FFFE under an *unsigned* compare, and the guide does not
+// state which compare the hardware uses. Until a device probe settles that, only
+// lanes that are provably active may take the buffer path: no user mask and no
+// redundant threads in the value layout. Everything else keeps the generic atomic
+// lowering, which on RDNA2 CAS-expands bitwise and unsigned min/max.
+// Evidence: docs/rdna2/buffer-atomic-capability-audit-rdna2.md and
+// docs/rdna2/m1-implementation-report.md section 24.
+static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
+                                         RMWOp rmwOp, Type elemTy, Value mask,
+                                         Type valTy) {
+  if (!targetFeatures.isRDNA2())
+    return false;
+  if (!llvm::is_contained({RMWOp::AND, RMWOp::OR, RMWOp::XOR, RMWOp::UMAX,
+                           RMWOp::UMIN},
+                          rmwOp))
+    return false;
+  if (!elemTy.isInteger(32) && !elemTy.isInteger(64))
+    return false;
+  if (mask && !isSplatOneConstTensor(mask))
+    return false;
+
+  auto tensorTy = dyn_cast<RankedTensorType>(valTy);
+  if (!tensorTy || !tensorTy.getEncoding())
+    return false;
+  for (const auto &freeVar :
+       ttg::toLinearLayout(tensorTy).getFreeVariableMasks()) {
+    if (freeVar.second != 0)
+      return false;
+  }
+  return true;
 }
 
 bool isByteOffsetSmallerThan2GB(triton::AddPtrOp addPtrOp,
@@ -470,6 +509,17 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
       return rewriter.notifyMatchFailure(op, "RMW requires opBitWidth >= 32");
     }
 
+    // 7. Targets without full buffer atomic RMW support only get the RDNA2
+    //    integer subset; the broad family predicate stays untouched so no other
+    //    target's behaviour changes.
+    if (!targetFeatures.supportsBufferAtomicRMW() &&
+        !supportsRdna2BufferAtomicRMW(targetFeatures, atomicRmwOp, checkType,
+                                      op.getMask(), op.getVal().getType())) {
+      return rewriter.notifyMatchFailure(
+          op, "target supports only a narrower buffer atomic RMW set");
+    }
+    LDBG("RMW passes the target-scoped subset check");
+
     // All checks passed; now safe to modify IR.
     auto addPtrOp = ptr.getDefiningOp<triton::AddPtrOp>();
     Value tensorPtr = addPtrOp.getPtr();
@@ -671,7 +721,13 @@ struct TritonAMDGPUConvertToBufferOpsPass
               this->analyzeSmallTensorOfst);
     }
 
-    if (this->allowBufferAtomics && targetFeatures.supportsBufferAtomicRMW())
+    // RDNA2 registers the rewrite too, because the operation and type allowlist
+    // is applied inside the pattern (step 7) and a failed match leaves the
+    // generic tt.atomic_rmw path in place. Widening supportsBufferAtomicRMW()
+    // itself would instead route fadd and f64 exchange into an instruction the
+    // pinned backend cannot select.
+    if (this->allowBufferAtomics && (targetFeatures.supportsBufferAtomicRMW() ||
+                                     targetFeatures.isRDNA2()))
       patterns.add<ConvertTritonAtomicRMWOpToBufferAtomicRMW>(
           context, assumptions, axisInfoAnalysis, solver, targetFeatures,
           this->analyzeSmallTensorOfst);

@@ -57,6 +57,7 @@ public:
   bool isCDNA3() const;
   bool isCDNA4() const;
   bool isCDNA5() const;
+  bool isRDNA2() const;
   bool isGFX1250Strict() const;
 
   int getWarpSize() const;
