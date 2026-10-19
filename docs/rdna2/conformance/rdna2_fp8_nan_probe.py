@@ -49,6 +49,18 @@ def dot_scaled_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out,
 
 
 @triton.jit
+def dot_scaled_mpack_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out):
+    # 32x64 * 64x32 with the lhs packed along M (two adjacent rows per byte)
+    a = tl.load(a_ptr + tl.arange(0, 16)[:, None] * BK + tl.arange(0, BK)[None, :])
+    b = tl.load(b_ptr + tl.arange(0, BK // 2)[:, None] * BN + tl.arange(0, BN)[None, :])
+    sk: tl.constexpr = BK // 32
+    sa = tl.load(sa_ptr + tl.arange(0, BM)[:, None] * sk + tl.arange(0, sk)[None, :])
+    sb = tl.load(sb_ptr + tl.arange(0, BN)[:, None] * sk + tl.arange(0, sk)[None, :])
+    acc = tl.dot_scaled(a, sa, "e2m1", b, sb, "e2m1", lhs_k_pack=False)
+    tl.store(out + tl.arange(0, BM)[:, None] * BN + tl.arange(0, BN)[None, :], acc)
+
+
+@triton.jit
 def cast_k(x_ptr, o_ptr, BLOCK: tl.constexpr, E4: tl.constexpr):
     x = tl.load(x_ptr + tl.arange(0, BLOCK))
     if E4:
@@ -152,6 +164,22 @@ def main():
         ok = bool(torch.equal(out, torch.full_like(out, expect)))
         record(f"e2m1 pack order byte 0x{byte:02X} -> {expect:g}", ok,
                f"got {out[0, 0].item()}")
+
+    # MXFP4 packed along M: a byte holds rows (2i, 2i+1) in its low/high nibble, so an all-0x21
+    # lhs against an all-1.0 rhs gives 32 on even rows and 64 on odd rows (0x12 swaps them).
+    b_ones = torch.full((BK // 2, BN), 0x22, dtype=torch.uint8, device="cuda")
+    scales = torch.full((BM, SK), 127, dtype=torch.uint8, device="cuda")
+    sb_scales = torch.full((BN, SK), 127, dtype=torch.uint8, device="cuda")
+    for byte, even, odd in ((0x21, 32.0, 64.0), (0x12, 64.0, 32.0)):
+        a = torch.full((BM // 2, BK), byte, dtype=torch.uint8, device="cuda")
+        out = torch.empty((BM, BN), dtype=torch.float32, device="cuda")
+        dot_scaled_mpack_k[(1,)](a, b_ones, scales, sb_scales, out, num_warps=4)
+        want = torch.empty_like(out)
+        want[0::2] = even
+        want[1::2] = odd
+        ok = bool(torch.equal(out, want))
+        record(f"e2m1 M-packed byte 0x{byte:02X} -> rows {even:g}/{odd:g}", ok,
+               f"got {out[0, 0].item()}/{out[1, 0].item()}")
 
     print(f"\n{'ALL PASS' if not FAILS else 'FAILURES: ' + ', '.join(FAILS)}")
     return 1 if FAILS else 0
