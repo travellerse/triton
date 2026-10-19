@@ -1,0 +1,46 @@
+sq_1024   BM  32 BN  32 BK 32 w1    0.2492 ms    8.62 TFLOPs  err=0.125
+sq_1024   BM  64 BN  32 BK 32 w2    0.2406 ms    8.93 TFLOPs  err=0.125
+sq_1024   BM  64 BN  64 BK 32 w4    0.2553 ms    8.41 TFLOPs  err=0.125
+sq_1024   BM  64 BN  64 BK 64 w4    0.2482 ms    8.65 TFLOPs  err=0.125
+sq_1024   BM 128 BN  64 BK 32 w4    0.2241 ms    9.58 TFLOPs  err=0.125
+sq_1024   BM 128 BN 128 BK 32 w4    0.2022 ms   10.62 TFLOPs  err=0.125
+sq_1024   BM 128 BN 128 BK 64 w8    0.1881 ms   11.42 TFLOPs  err=0.125
+sq_1024   BM 128 BN 128 BK 64 w4    0.2142 ms   10.02 TFLOPs  err=0.125
+sq_1024   BM  64 BN 128 BK 64 w4    0.1689 ms   12.72 TFLOPs  err=0.125
+sq_2048   BM  32 BN  32 BK 32 w1    1.6969 ms   10.12 TFLOPs  err=0.125
+sq_2048   BM  64 BN  32 BK 32 w2    1.6319 ms   10.53 TFLOPs  err=0.125
+sq_2048   BM  64 BN  64 BK 32 w4    1.7334 ms    9.91 TFLOPs  err=0.125
+sq_2048   BM  64 BN  64 BK 64 w4    1.7239 ms    9.97 TFLOPs  err=0.125
+sq_2048   BM 128 BN  64 BK 32 w4    1.5810 ms   10.87 TFLOPs  err=0.125
+sq_2048   BM 128 BN 128 BK 32 w4    1.1319 ms   15.18 TFLOPs  err=0.125
+sq_2048   BM 128 BN 128 BK 64 w8    1.1626 ms   14.78 TFLOPs  err=0.125
+sq_2048   BM 128 BN 128 BK 64 w4    1.3554 ms   12.68 TFLOPs  err=0.125
+sq_2048   BM  64 BN 128 BK 64 w4    1.1308 ms   15.19 TFLOPs  err=0.125
+qk_like   BM  32 BN  32 BK 32 w1    0.2208 ms    9.73 TFLOPs  err=0.031
+qk_like   BM  64 BN  32 BK 32 w2    0.2188 ms    9.81 TFLOPs  err=0.031
+qk_like   BM  64 BN  64 BK 32 w4    0.2302 ms    9.33 TFLOPs  err=0.031
+qk_like   BM  64 BN  64 BK 64 w4    0.2288 ms    9.38 TFLOPs  err=0.031
+qk_like   BM 128 BN  64 BK 32 w4    0.2118 ms   10.14 TFLOPs  err=0.031
+qk_like   BM 128 BN 128 BK 32 w4    0.1559 ms   13.77 TFLOPs  err=0.031
+qk_like   BM 128 BN 128 BK 64 w8    0.1726 ms   12.44 TFLOPs  err=0.031
+qk_like   BM 128 BN 128 BK 64 w4    0.2809 ms    7.65 TFLOPs  err=0.031
+qk_like   BM  64 BN 128 BK 64 w4    0.1608 ms   13.35 TFLOPs  err=0.031
+pv_like   BM  32 BN  32 BK 32 w1    0.4745 ms    4.53 TFLOPs  err=0.125
+pv_like   BM  64 BN  32 BK 32 w2    0.4467 ms    4.81 TFLOPs  err=0.125
+pv_like   BM  64 BN  64 BK 32 w4    0.4743 ms    4.53 TFLOPs  err=0.125
+pv_like   BM  64 BN  64 BK 64 w4    0.3604 ms    5.96 TFLOPs  err=0.125
+pv_like   BM 128 BN  64 BK 32 w4    0.6339 ms    3.39 TFLOPs  err=0.125
+pv_like   BM 128 BN 128 BK 32 w4    1.2395 ms    1.73 TFLOPs  err=0.125
+pv_like   BM 128 BN 128 BK 64 w8    0.5177 ms    4.15 TFLOPs  err=0.125
+pv_like   BM 128 BN 128 BK 64 w4    1.1836 ms    1.81 TFLOPs  err=0.125
+pv_like   BM  64 BN 128 BK 64 w4    0.4510 ms    4.76 TFLOPs  err=0.125
+
+best per shape:
+  sq_1024    12.72 TFLOPs @ BM64 BN128 BK64 w4
+  sq_2048    15.19 TFLOPs @ BM64 BN128 BK64 w4
+  qk_like    13.77 TFLOPs @ BM128 BN128 BK32 w4
+  pv_like     5.96 TFLOPs @ BM64 BN64 BK64 w4
+wrote /tmp/q21-p1/dot_ceiling2.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792400664-88906-p4-dot-ceiling2
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10823 MiB, MemAvailable 19668 MiB
+  ! stale lock record '88466 p4-dot-ceiling 2048': pid 88466 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

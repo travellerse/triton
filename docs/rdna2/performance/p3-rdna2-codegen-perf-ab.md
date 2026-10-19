@@ -51,10 +51,8 @@ each rebuilt via ccache at `-j6`.
 
 ## Next performance target, from measurement rather than assumption
 
-The dot arm above is one 64×64 tile per program and is occupancy-bound, so it does not yet quantify
-the FMA `dot` ceiling. The known gap is the workload's fused attention: **`n_regs=256`,
-`n_spills=711`, 8192 `v_dot2c_f32_f16`, 5.12 TFLOPs vs 17.59 TFLOPs for the same shapes through
-rocBLAS** (`evidence/reports/42`), and RDNA2 has no WMMA/MFMA to fall back on. Since LLVM already
-selects `v_dot2c_f32_f16`, the lever is register blocking in the FMA dot path so the tile fits the
-wave32 VGPR budget without spilling — the success bar being spills materially down **and** sustained
-TFLOPs approaching the rocBLAS figure, not a smaller instruction count.
+Superseded by `p4-dot-ceiling-rdna2.md`, which measured the ceiling this paragraph only guessed at:
+Triton's FMA `dot` reaches **15.19 TFLOPs** on square fp16 GEMM on this card, so the dot lowering is
+not the bottleneck; but the PV-like contraction (long K, N=128) tops out at **5.96 TFLOPs**, which is
+why the fused attention kernel's `n_spills=711` never explained the gap by itself. The next move is
+the contraction shape in the attention kernel, not the lowering.
