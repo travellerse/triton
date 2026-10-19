@@ -1,8 +1,8 @@
 # RDNA2 cache modifiers: encoding derived from the RDNA2 ISA, then verified in machine code
 
 Status: **CONFIRMED** for the aux → instruction-bit mapping (through Triton's own compiler, on both
-gfx1030 and gfx1031). **NOT ESTABLISHED** for any performance effect: the timing arms below are
-null and my earlier bandwidth-saturation explanation is withdrawn.
+gfx1030 and gfx1031). **NOT ESTABLISHED** for any performance effect: the timing arms are null, and
+the counters route is **BLOCKED** on this host (see Evidence 4 for the falsified explanation).
 Date: 2026-10-19 (post-review rewrite). Tags `cmod3`. Device: RX 6700 XT (`gcn=gfx1030`, native
 part gfx1031).
 Supersedes the values in the previous version of this file and the "known gap" state in
@@ -152,10 +152,41 @@ these hints did not use it. That is a real open question, not a closed one.
 
 What is now verified is the mapping; what is still unverified is whether GLC/SLC/DLC change
 measurable traffic on this part, because the timing arms are within or near the 2.37% A/A band and
-the two runs disagreed in sign. The discriminator is counters, not timing: `GL2C_HIT`/`GL2C_MISS`
-are collectible on this host (`TCP_UTCL1_REQUEST` is not), and the concrete next attempt is to
-profile a **pre-compiled** launch so rocprofv3's interception does not overlap Triton's in-process
-LLVM compilation, or to use the AMD metrics API directly.
+the two runs disagreed in sign.
+
+## Evidence 4 — the counters route is blocked on this host, and my explanation for it was wrong
+
+I claimed the earlier rocprofv3 hang came from interception overlapping Triton's in-process LLVM
+compilation, and that pre-compiling would fix it. [rdna2_cache_policy_pmc.py](file:///home/trave/code/triton/docs/rdna2/performance/rdna2_cache_policy_pmc.py)
+tests exactly that: one process compiles and launches every arm (warm disk cache, numerics compared
+bit-for-bit across arms), then each arm is profiled in a *launch-only* process:
+
+```
+rocprofv3 --pmc GL2C_REQUEST GL2C_HIT GL2C_MISS -f csv -o /tmp/pmc2_<arm> -- \
+  python rdna2_cache_policy_pmc.py --profile <arm>
+```
+
+Result, run under `EXCLUSIVE_COOPERATIVE_LOCK` (tag `cmodpmc2`, agent `gfx1031`): the hypothesis is
+falsified. The tool collected `GL2C_HIT`/`GL2C_MISS` for the two torch setup dispatches — so these
+counters are collectible on this part — and then the first **Triton** dispatch never completed: the
+profiled process sat in `futex_wait` for 16 minutes with only those 2 dispatches in the CSV, and
+`timeout 90` did not terminate it (rocprofv3 does not die on SIGTERM at that point), so the
+experiment held the GPU lock while stuck. I did not kill or signal it, per the standing constraint,
+which means this arm is **BLOCKED**, not measured.
+
+Since compilation had already happened in a separate process and the cache was warm, the hang is
+attached to counter-session interception of a Triton-submitted queue, not to LLVM being in-process.
+Two routes remain untried, in order of cost:
+
+* **Effect-size timing, no profiler.** If GLC|DLC really forces L1 miss-evict, a deep re-read loop
+  over a region that comfortably fits L1 (e.g. BLOCK=8 KB, REP=512, 1 warp) must cost a *large*
+  multiple, not 1%. The old arms looked for a few percent inside a 2.4% band; a 5-10× separation is
+  un-missable, and if it does not appear the honest verdict is "encoded and inert on this part".
+* **In-process counters via the SDK**, not the CLI: `/opt/rocm/include/rocprofiler-sdk/`
+  (`counters.h`, `counter_config.h`) is installed, and `/opt/rocm/include/rocprofiler/` v1/v2
+  headers plus `librocprofiler64.so` are present too — `gpu-benches/rocm-metrics/rocm-metrics.hpp`
+  shows the legacy shape of that API. A HIP-side baseline would also separate "Triton under a
+  counter session" from "RDNA2 ignoring the bits".
 
 ## Collateral
 
