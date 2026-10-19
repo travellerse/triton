@@ -1,0 +1,14 @@
+H=32 QN=5120 KN=10287 HD=128  862.9 GFLOP/call  ref_max=0.123  vram free=11304 MiB total=12272 MiB
+arm 0: subquad_fp16:2048 median   92.569 ms  min   91.920    9.32 TFLOPs  rel_err 1.99e-03  peak  2900.7 MiB
+arm 1: subquad_inplace:2048 median   92.169 ms  min   91.780    9.36 TFLOPs  rel_err 1.99e-03  peak  1614.7 MiB
+arm 2: subquad_upcast:2048 median  178.571 ms  min  177.763    4.83 TFLOPs  rel_err 1.99e-03  peak  6742.7 MiB
+arm 3: subquad_fp16:1024 median   93.562 ms  min   93.197    9.22 TFLOPs  rel_err 1.99e-03  peak  1606.7 MiB
+arm 4: subquad_inplace:1024 median   92.767 ms  min   92.245    9.30 TFLOPs  rel_err 1.99e-03  peak   963.7 MiB
+arm 5: 32x32x4        median  182.176 ms  min  181.540    4.74 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 6: subquad_fp16:2048 median   92.142 ms  min   91.635    9.37 TFLOPs  rel_err 1.99e-03  peak  2900.7 MiB
+
+A/A band: 92.569 vs 92.142 ms -> 0.46%
+fastest arm: 6:subquad_fp16:2048 at 92.142 ms (9.37 TFLOPs)
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792408838-213632-smode2
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11116 MiB, MemAvailable 16383 MiB
+  ! stale lock record '213021 smode 7000\n0': pid 213021 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
