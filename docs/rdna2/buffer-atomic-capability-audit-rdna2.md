@@ -21,7 +21,7 @@ Opcodes as listed in the ISA guide's MUBUF tables:
 | gate | file:line | RDNA2 arm | classification |
 | --- | --- | --- | --- |
 | `supportsBufferAtomicRMW()` | [TargetFeatures.cpp:271-276](file:///home/trave/code/triton/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L271) | excluded entirely (CDNA3/4, RDNA3/4m/4, CDNA5) | **software gap** — every integer op above exists on RDNA2 |
-| `supportsBufferAtomicFadd()` | [TargetFeatures.cpp:278-289](file:///home/trave/code/triton/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L278) | no RDNA2 arm → returns `true` by fallthrough | **ISA limit** (no `FADD` opcode), but currently saved only by the RMW gate — see the trap below |
+| `supportsBufferAtomicFadd()` | [TargetFeatures.cpp:278-289](file:///home/trave/code/triton/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L278) | explicit `false` since `88c8a152ec`; before that no RDNA2 arm → `true` by fallthrough | **ISA limit** (no `FADD` opcode); the fallthrough was the defect, see below |
 | `supportsBufferAtomicFMinMax(f32)` | [TargetFeatures.cpp:291-299](file:///home/trave/code/triton/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L291) | f32 list is RDNA3/RDNA4m/RDNA4/CDNA5 → RDNA2 false | **software gap** — `FMIN`/`FMAX` 63/64 exist |
 | f64 min/max | same function, CDNA-only list | false | correct: the `_X2` float ops are f32-pairs, not f64 |
 
@@ -34,14 +34,18 @@ lacks the instructions ([m1-implementation-report.md:500-512](file:///home/trave
 The integer subset (`and/or/xor/umin/umax`, i32/i64) was built and pinned in an isolated worktree
 and never merged, because its runtime validation stayed BLOCKED.
 
-### A trap for whoever widens the gate
+### A trap for whoever widens the gate — closed
 
-`supportsBufferAtomicFadd()` has no RDNA2 arm, so it falls through to `return true`
+`supportsBufferAtomicFadd()` had no RDNA2 arm, so it fell through to `return true`
 ([TargetFeatures.cpp:278-289](file:///home/trave/code/triton/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L278)).
-Today that is harmless only because `supportsBufferAtomicRMW()` rejects the family first. If the RMW
+Today that was harmless only because `supportsBufferAtomicRMW()` rejects the family first. If the RMW
 gate is widened without giving fadd an explicit RDNA2 arm, the lowering will be asked to emit
 `BUFFER_ATOMIC_FADD` — an opcode that does not exist on this part. That inconsistency is a real
 defect in the gate structure, independent of whether RDNA2 atomics ever get enabled.
+
+Closed on this branch by `88c8a152ec`: RDNA2 gets an explicit `false` with the opcode-table citation,
+which changes nothing for any other family (one pass call site, one never-called `TargetInfo` wrapper,
+both checked by grep).
 
 ## Why the fix is not just "add RDNA2 to the list"
 

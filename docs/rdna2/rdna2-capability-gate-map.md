@@ -45,9 +45,11 @@ not a missing feature.
 | `supportsBufferAtomicFMinMax(f32)` — RDNA3/4m/4/CDNA5 | `BUFFER_ATOMIC_FMIN` 63, `FMAX` 64, `FCMPSWAP` 62 exist, and `_X2` variants too | f32 atomic min/max cannot use buffer atomics on RDNA2 |
 | `supportBitwidth32Elementwise()` — CDNA only | not checked against the ISA (see below) | elementwise ops are split to narrower vectors on RDNA2 |
 
-Counterpart: `supportsBufferAtomicFadd()` **should** exclude RDNA2 — there is no `BUFFER_ATOMIC_FADD`
-opcode at all — but the function has no RDNA2 arm and returns `true` by fallthrough. It is only
-harmless because the RMW gate rejects the family first. See
+Counterpart: `supportsBufferAtomicFadd()` now excludes RDNA2 explicitly — there is no
+`BUFFER_ATOMIC_FADD` opcode at all — instead of inheriting `true` from the permissive fallthrough that
+used to answer for any unnamed family. The fallthrough was harmless only because the RMW gate rejects
+the family first, so this is a no-op in behaviour; it removes the inconsistency rather than a live bug.
+See
 [buffer-atomic-capability-audit-rdna2.md](file:///home/trave/code/triton/docs/rdna2/buffer-atomic-capability-audit-rdna2.md)
 for that trap, the anti-regression status of the `atomic-*` lit lines, and the validation queue
 (masked-lane suppression, and GLC meaning "return pre-op value" for atomics rather than a cache
