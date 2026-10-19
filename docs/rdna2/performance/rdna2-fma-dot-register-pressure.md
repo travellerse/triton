@@ -86,6 +86,29 @@ optimization found in the whole RDNA2 program — it helps every FMA-fallback ta
   [rdna2-fused-fa-loses-on-rdna2.md](file:///home/trave/code/triton/docs/rdna2/performance/rdna2-fused-fa-loses-on-rdna2.md).
 * `num_stages` cannot fix it (947 → 846 → 845 → 1794 spills), so it is not a scheduling flag.
 
+## Root cause read in the lowering itself (code evidence, 2026-10-19)
+
+`lib/Conversion/TritonGPUToLLVM/DotOpToLLVM/FMADotUtility.cpp:100-160` explains the shape of the
+problem:
+
+* `getValueTableFromStructFMA` unpacks **every** element of both operand tensors into a
+  `ValueTableFMA` map (`has`, `hbs`) before any arithmetic is emitted, and the FMA loop then
+  re-reads the whole K extent for each accumulator element:
+  `for k in 0..K: aOpVector.push_back(has[{bRep,mRep,b,m,k}])` inside
+  `for bRep/mRep/nRep/b/m/n`.
+* So the peak live set is *A tile + B tile + accumulator*, all simultaneously, by construction.
+* **Why reordering this loop cannot fix it.** The operands arrive as already-materialized
+  register structs from `local_load`, so all their elements are live-in to the dot regardless of
+  the order in which the FMAs consume them. Making K outermost would only shorten the *SSA*
+  lifetimes, not the *storage* lifetimes. That is the wrong lever, and the measurement supports
+  it: `num_stages` (a scheduling knob) moved spills 947 → 846 → 845 → 1794 rather than to zero.
+* What the structure implies instead: the operand tensors have to stop being fully materialized.
+  Two ways — split the dot along K at TTGIR level into a chain of smaller dots whose operands are
+  re-`local_load`ed per chunk (chunked/operand-stationary FMA, which is also what MFMA achieves via
+  `kPack`), or bind one operand to shared memory per K slice. Both are layout/pipelining work above
+  this file, which is why the measured workaround so far is "pick a tile the current structure can
+  hold" (1.495× on the attention inner loop) rather than a compiler fix.
+
 ## Not established
 
 * I have not proven *which* values the allocator is keeping live; that needs `-debug-only=regalloc`
