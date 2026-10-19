@@ -1,0 +1,39 @@
+
+== gfx1030  tile BM=32 BN=32 HD=128 warps=4 ==
+variant                                 spills   vgpr
+full (masked tail + online softmax)        226    256
+no tail masking                            222    256
+no online rescale (no m_i/alpha)           212    256
+QK dot only                                 38    256
+PV dot only                                 17    256
+PV dot only, fp32 (forces FMA on RDNA3 too)      81    256
+
+== gfx1100  tile BM=32 BN=32 HD=128 warps=4 ==
+variant                                 spills   vgpr
+full (masked tail + online softmax)          0    240
+no tail masking                              0    199
+no online rescale (no m_i/alpha)             0    190
+QK dot only                                  0    115
+PV dot only                                  0    118
+PV dot only, fp32 (forces FMA on RDNA3 too)      72    256
+
+w=1  spills=0 next_free_vgpr=234
+   loads: {'global_load_dwordx4': 20, 'ds_write_b128': 4, 'ds_read_b128': 128, 'global_store_dwordx4': 16}
+   dot_operand layouts: ['#ttg.dot_op<{opIdx = 0, parent = #blocked2}>', '#ttg.dot_op<{opIdx = 1, parent = #blocked2}>']
+   #blocked = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [8, 4], warpsPerCTA = [1, 1], order = [1, 0]}>
+   #blocked1 = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [2, 16], warpsPerCTA = [1, 1], order = [1, 0]}>
+   #blocked2 = #ttg.blocked<{sizePerThread = [4, 4], threadsPerWarp = [1, 32], warpsPerCTA = [1, 1], order = [1, 0]}>
+
+w=2  spills=114 next_free_vgpr=256
+   loads: {'buffer_store_dword': 114, 'buffer_load_dword': 114, 'global_load_dwordx4': 10, 'ds_write_b128': 18, 'ds_read_b128': 72, 'ds_read2_b64': 16, 'global_store_dwordx4': 8}
+   dot_operand layouts: ['#ttg.dot_op<{opIdx = 0, parent = #blocked2}>', '#ttg.dot_op<{opIdx = 1, parent = #blocked2}>']
+   #blocked = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [8, 4], warpsPerCTA = [2, 1], order = [1, 0]}>
+   #blocked1 = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [2, 16], warpsPerCTA = [2, 1], order = [1, 0]}>
+   #blocked2 = #ttg.blocked<{sizePerThread = [4, 4], threadsPerWarp = [1, 32], warpsPerCTA = [2, 1], order = [1, 0]}>
+
+w=4  spills=17 next_free_vgpr=256
+   loads: {'buffer_store_dword': 17, 'buffer_load_dword': 17, 'global_load_dwordx4': 5, 'ds_write_b128': 9, 'ds_read_b128': 36, 'ds_read2_b64': 16, 'global_store_dwordx4': 4}
+   dot_operand layouts: ['#ttg.dot_op<{opIdx = 0, parent = #blocked2}>', '#ttg.dot_op<{opIdx = 1, parent = #blocked2}>']
+   #blocked = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [8, 4], warpsPerCTA = [4, 1], order = [1, 0]}>
+   #blocked1 = #ttg.blocked<{sizePerThread = [1, 8], threadsPerWarp = [2, 16], warpsPerCTA = [4, 1], order = [1, 0]}>
+   #blocked2 = #ttg.blocked<{sizePerThread = [4, 4], threadsPerWarp = [1, 32], warpsPerCTA = [4, 1], order = [1, 0]}>
