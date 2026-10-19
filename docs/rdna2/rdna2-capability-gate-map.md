@@ -129,30 +129,40 @@ RDNA3. Two pieces of evidence:
   walks the whole frontend-to-LLVM pipeline against an explicit `GPUTarget` (no device, no launch).
   Every format the frontend accepts (`e2m1`, `e4m3`, `e5m2`, `bf16`, `fp16`, plus mixed
   `e4m3×e2m1` and `fp16×bf16`) compiles on gfx1030 and native gfx1031 at the probe's 32x32x64 /
-  4-warp shape. The controls show zero scratch; every gfx103x MX/bf16 case spills a little even at
-  this tile (about 1.1 KB of scratch per lane and ~275 folded spill stores), and plain fp16 is the
-  exception (88 B, 21 stores):
+  4-warp shape. With the result tiling described below, the controls show zero scratch, every
+  gfx103x MX/bf16 case keeps only the upcast residue (mxfp8 96 B and 23 folded spill stores, bf16
+  112 B), and plain fp16 is spill-free:
 
 | arch | mxfp8 | mxfp4 | mixed | dot path in `.amdgcn` |
 | --- | --- | --- | --- | --- |
-| gfx1030 / gfx1031 | 3328 instr | 2710 | 3242 | FMA (dot-family histogram empty) |
+| gfx1030 / gfx1031 | 2414 instr | 1891 | 2343 | FMA (dot-family histogram empty) |
 | gfx1100 | 2109 | 1404 | 1783 | `v_wmma_f32_16x16x16_bf16` x4 |
 | gfx1200 | 1227 | 835 | 1060 | `v_wmma_f32_16x16x16_bf16` x4 |
 | gfx942 | 1155 | 924 | 1060 | `v_mfma_f32_32x32x8_bf16` x8 |
 
 The other formats tell the same story: e5m2, bf16 and the fp16×bf16 mix compile to the FMA dot on
-gfx103x (1970–2702 instructions), while plain fp16 is the one case that reaches RDNA2's packed dot —
-256 `v_dot2c_f32_f16` calls in 907 instructions. Nothing in the format set falls off the family's
+gfx103x (1147–1878 instructions), while plain fp16 is the one case that reaches RDNA2's packed dot —
+256 `v_dot2c_f32_f16` calls in 849 instructions. Nothing in the format set falls off the family's
 decomposition, and the batched form is covered too: a 2x32x32x64 `dot_scaled` compiles on gfx1030
-(7,507 instructions, 3,400 B scratch) and gfx1100 (3,925, zero scratch), so the decomposed path is
+(4,846 instructions, 340 B scratch) and gfx1100 (3,925, zero scratch), so the decomposed path is
 not 2D-only.
+
+The FMA tiling is the third piece of the fix. `DotScaledOp` was converted generically and kept the
+default 1x1 result tile, with a comment assuming a later pass would replace it; matrix-unit targets
+do, but the AMD software decomposition does not. On the FMA path that tile makes each thread own 8
+A rows instead of 2 at 32x32x64, and it was the dominant source of the spill counts this section
+used to report. `TritonScaledDotPattern` now shares `TritonDotPattern`'s heuristic; the matrix-unit
+rows above are unchanged because they overwrite the encoding, while gfx103x dropped from 3328
+instructions/1112 B scratch to 2414/96 B. Pinned by the `dot_scaled_fma_layout` chunk in
+`test/Conversion/triton_to_tritongpu.mlir` (red without the pattern).
 
 The e4m3 rows carry a NaN guard that the software path used to lack. Rebuilding 0x7F/0xFF with the
 bias multiply mapped E4M3FN's NaN encoding to a finite ±480, while the backend's plain fp8→f16
-software path maps the same byte to NaN; the upcast now selects a canonical NaN first. That costs
-80 selects and ~14% instructions on gfx103x at this tile (7% on the mixed case), and up to ~38% on
-gfx1100 where the WMMA dot leaves less room around the conversion. mxfp4 (no NaN encoding), e5m2,
-bf16 and fp16 are unchanged. Correctness is pinned by the `scaled_upcast_fp8_sw_nan` chunk in
+software path maps the same byte to NaN; the upcast now selects a canonical NaN first. That adds
+80 selects at this tile; measured before the tiling fix it was +14% instructions on gfx103x (7% on
+the mixed case) and up to +38% on gfx1100, where the WMMA dot leaves less room around the
+conversion. mxfp4 (no NaN encoding), e5m2, bf16 and fp16 are unchanged. Correctness is pinned by
+the `scaled_upcast_fp8_sw_nan` chunk in
 `test/Conversion/amd/tritongpu_to_llvm_rdna.mlir` (red when the select is removed). The same defect
 in the plain fp8→bf16 software cast (`OcpF8ToBf16SW`, which `tl.cast(..., bf16)` takes on these
 families) got the equivalent guard for both OCP formats — equality against 0x7F for E4M3FN, unsigned
@@ -165,15 +175,15 @@ NaN operands and NaN scales, ±inf, ±448/±57344, and 448×448 through the scal
 all pass. Grade: **MEASURED** on gfx1031.
 
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
-gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (58,088 and 87,225 instructions for mxfp8),
-with gfx1100 as the control (21,703 / 33,454). Three costs worth knowing before reaching for it:
-compile time is tile-sensitive (36.6 s for 64x64x128 at stages=2 vs 3.7 s for 32x32x64), the
-large-tile kernel is 5.6x the instruction count of the equivalent plain f16 dot (10,369), and
-spilling is substantial — 16,304 B of scratch per lane with 4,349 folded spill stores at 4 warps,
-7,692 B at 8 warps, versus 1,540 B for the plain f16 dot at the same tile; a 32x32x64 loop stays at
-1,232 B. `waves_per_eu` 0/1/2 did not change the scratch size. The instruction and compile-time
-numbers are partly the software upcast's cost; all of them are compile-time facts and the runtime
-cost is unmeasured.
+gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (32,313 and 48,828 instructions for mxfp8),
+with gfx1100 as the control (21,703 / 33,454, unchanged by the tiling). Three costs worth knowing
+before reaching for it: compile time is tile-sensitive (10.1 s for 64x64x128 at stages=2 vs 1.4 s
+for 32x32x64), the large-tile kernel is 3.1x the instruction count of the equivalent plain f16 dot
+(10,369), and spilling remains measurable — 4,052 B of scratch per lane with 1,167 folded spill
+stores at 4 warps, 1,596 B at 8 warps, versus 1,540 B for the plain f16 dot at the same tile; a
+32x32x64 loop stays at 224 B. The instruction and compile-time numbers are partly the software
+upcast's cost; all of them are compile-time facts, and the 4096³ runtime measurement is still
+queued (the pre-fix attempt triggered gfx ring resets).
 
 Instruction counts are totals and not comparable across families: gfx103x executes the dot as
 per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
@@ -181,9 +191,9 @@ families issue one instruction for the whole tile. The control rows matter becau
 arm changes only the family that previously had no arm — RDNA3/RDNA4 and CDNA4 keep their
 WMMA/MFMA paths unchanged.
 
-Limits: this is compile-only, and the lit test pins the IR shape. Numerical validation of the
-decomposed MX path on hardware is still owed; device work on this branch remains blocked, so it is
-tracked with the other hardware-validation items rather than claimed.
+Limits: numerics of the decomposed path are measured on gfx1031 (the probe above); performance is
+not. The pre-fix 4096³ e4m3 GEMM coincided with amdgpu ring timeouts/resets at 02:20 local, so the
+post-fix rerun waits for the admission fault window instead of being claimed.
 
 ## Cross-family gap that is not RDNA2's alone: `eviction_policy` is dropped
 
