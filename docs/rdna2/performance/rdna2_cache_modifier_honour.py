@@ -109,6 +109,12 @@ def main():
     # traffic is comparable to it: a copy moves bytes twice, so its summed figure must never be
     # read against this number.
     ap.add_argument("--spec-gbps", type=float, default=384.0)
+    # The resident re-read is the honour discriminator. If a near-cache bypass is real, deepening
+    # the loop should widen the gap into a multiple, not a few percent -- a run that stays at ~1%
+    # with REP in the hundreds says the bits are inert, and these knobs make that a one-command
+    # experiment (--resident-block 1024 --resident-rep 512).
+    ap.add_argument("--resident-block", type=int, default=1024)
+    ap.add_argument("--resident-rep", type=int, default=64)
     args = ap.parse_args()
 
     assert torch.cuda.is_available()
@@ -122,7 +128,9 @@ def main():
     # ---- case 1: L1-resident re-reads (the honour signal) ----
     # The arm order is none, cg, cs, cv, none again: the trailing repeat of the unmodified
     # variant sizes the noise band, without which a 7% delta is not evidence of anything.
-    BLOCK, REP = 1024, 64                      # 4 KiB working set, read 64x per launch
+    BLOCK, REP = args.resident_block, args.resident_rep
+    print(f"  resident arm: BLOCK={BLOCK} ({BLOCK*4/1024:.0f} KiB working set), REP={REP}",
+          flush=True)
     x = torch.randn(BLOCK, device="cuda", dtype=torch.float32)
     o = torch.zeros(BLOCK, device="cuda", dtype=torch.float32)
     ref = None
