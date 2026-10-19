@@ -83,7 +83,7 @@ def subquad(q, k, v, out, qchunk, mode="upcast"):
       upcast  -- softmax(att.float()).half()  (fp32 score copy, what ComfyUI does when
                  attn_precision is fp32; it is also the reference-accurate case)
       fp16    -- softmax(att) in fp16 (ATen still accumulates in fp32)
-      inplace -- att.softmax_(-1), no separate probability tensor
+      inplace -- torch.softmax(att, -1, out=att), no separate probability tensor
     """
     H, QN, HD = q.shape
     KN = k.shape[1]
@@ -99,7 +99,7 @@ def subquad(q, k, v, out, qchunk, mode="upcast"):
         elif mode == "fp16":
             p = torch.softmax(att, dim=-1)
         else:
-            p = att.softmax_(-1)
+            p = torch.softmax(att, dim=-1, out=att)
         out[:, s0:s1] = torch.bmm(p, v)
         del att, p
 
