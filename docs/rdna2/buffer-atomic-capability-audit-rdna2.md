@@ -68,6 +68,19 @@ Two things must be settled with hardware, and neither is answerable statically:
    guard bytes change. Any lane written = signed comparison = the current code is already unsafe for
    *every* masked buffer access on RDNA, atomics included, which would make this more urgent than
    the gate. No list change should be made before that answer exists.
+
+   Two things shrink that residual, and both are worth stating so the risk is not overstated:
+   the mechanism is **already in shipped use** -- RDNA3/RDNA4 build the descriptor with the same
+   `OOB_select=3` flags and *do* have `supportsBufferAtomicRMW()` enabled, so masked buffer atomics
+   already run through this path on shipping targets; the open question is only whether gfx10
+   compares the offset differently. And `num_records` is an unsigned descriptor field, which makes
+   the unsigned reading the natural one.
+
+   A guard-region test cannot settle it either way: a lane that escaped suppression would write at
+   `base - 2 GiB`, outside the tensor, so in-buffer sentinels stay clean under both readings. The
+   discriminating observation is a memory violation, which is what
+   [conformance/rdna2_masked_buffer_atomic_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_masked_buffer_atomic_probe.py)
+   is built to surface (it also runs unchanged on gfx1100, where the path is live today).
 2. **Return-value and cache-policy interaction.** On GFX10 the atomic's `GLC` bit selects whether
    the pre-op value is returned (ISA guide 8.1.10 "Atomics"), so the cache-policy aux path and the
    atomic path must not share a table — the RDNA2 cache helper says so explicitly, and any atomic
