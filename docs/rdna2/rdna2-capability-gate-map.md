@@ -153,7 +153,11 @@ software path maps the same byte to NaN; the upcast now selects a canonical NaN 
 80 selects and ~14% instructions on gfx103x at this tile (7% on the mixed case), and up to ~38% on
 gfx1100 where the WMMA dot leaves less room around the conversion. mxfp4 (no NaN encoding), e5m2,
 bf16 and fp16 are unchanged. Correctness is pinned by the `scaled_upcast_fp8_sw_nan` chunk in
-`test/Conversion/amd/tritongpu_to_llvm_rdna.mlir` (red when the select is removed).
+`test/Conversion/amd/tritongpu_to_llvm_rdna.mlir` (red when the select is removed). The same defect
+in the plain fp8→bf16 software cast (`OcpF8ToBf16SW`, which `tl.cast(..., bf16)` takes on these
+families) got the equivalent guard for both OCP formats — equality against 0x7F for E4M3FN, unsigned
+>0x7C for E5M2 so infinity is not caught — pinned by the `fp8_e4m3_bf16_sw_nan` and
+`fp8_e5m2_bf16_sw_nan` chunks.
 
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
 gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (58,088 and 87,225 instructions for mxfp8),
