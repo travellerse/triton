@@ -105,6 +105,10 @@ def main():
     ap.add_argument("--batch", type=int, default=100)
     ap.add_argument("--ramp", type=float, default=8.0)
     ap.add_argument("--out", default="/tmp/cmod.json")
+    # Datasheet peak, unidirectional (RX 6700 XT: 16 Gbps x 192-bit = 384 GB/s). Only one-way
+    # traffic is comparable to it: a copy moves bytes twice, so its summed figure must never be
+    # read against this number.
+    ap.add_argument("--spec-gbps", type=float, default=384.0)
     args = ap.parse_args()
 
     assert torch.cuda.is_available()
@@ -159,9 +163,12 @@ def main():
             lambda cm=cm: streaming_read[grid](xs, os_, N, BLOCK=blk, CM=cm, num_warps=4),
             max(1, args.batch // 10), args.reps, args.ramp))
         gbps = (N * 4 / 1e9) / (ms / 1000)
-        res[f"stream_{cm}"] = {"median_ms": ms, "gbps": gbps, "matches_none": agree}
-        print(f"streaming read    CM={cm:5s} median {ms:8.3f} ms  {gbps:6.1f} GB/s  "
-              f"bitwise={agree}", flush=True)
+        res[f"stream_{cm}"] = {"median_ms": ms, "gbps_oneway": gbps,
+                               "pct_of_spec": 100 * gbps / args.spec_gbps,
+                               "matches_none": agree}
+        print(f"streaming read    CM={cm:5s} median {ms:8.3f} ms  {gbps:6.1f} GB/s one-way "
+              f"({100 * gbps / args.spec_gbps:4.1f}% of {args.spec_gbps:g})  bitwise={agree}",
+              flush=True)
     del xs, os_
     torch.cuda.empty_cache()
 
@@ -179,10 +186,14 @@ def main():
         ms = statistics.median(timed(
             lambda cm=cm: write_mod[grid](xd, od, N, BLOCK=blk, CM=cm, num_warps=4),
             max(1, args.batch // 10), args.reps, args.ramp))
-        gbps = (N * 4 * 2 / 1e9) / (ms / 1000)
-        res[f"store_{cm}"] = {"median_ms": ms, "gbps": gbps, "matches_none": agree}
-        print(f"copy w/ store cm  CM={cm:5s} median {ms:8.3f} ms  {gbps:6.1f} GB/s  "
-              f"bitwise={agree}", flush=True)
+        oneway = (N * 4 / 1e9) / (ms / 1000)
+        res[f"store_{cm}"] = {"median_ms": ms, "gbps_oneway": oneway,
+                              "gbps_summed": 2 * oneway,
+                              "pct_of_spec": 100 * oneway / args.spec_gbps,
+                              "matches_none": agree}
+        print(f"copy w/ store cm  CM={cm:5s} median {ms:8.3f} ms  {oneway:6.1f} GB/s per "
+              f"direction ({100 * oneway / args.spec_gbps:4.1f}% of {args.spec_gbps:g}), "
+              f"{2 * oneway:6.1f} summed  bitwise={agree}", flush=True)
     del xd, od
     torch.cuda.empty_cache()
 
