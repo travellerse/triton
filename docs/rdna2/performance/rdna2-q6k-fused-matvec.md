@@ -35,6 +35,27 @@ Fused vs the shipped dequant followed by an f32 contraction: max relative error 
 fp16 products whose q range is ±32). The decode is the kernel previously validated bit-exact
 against the plugin's `dequantize_blocks_Q6_K`.
 
+## Small-M reuse
+
+`mv6k_m` reuses each decoded weight block across M activation rows with a `[M, BN, 256]` f32
+accumulator. Values agree with the reference to `rel_to_max` 1.6–1.9×10⁻⁶ for M=1..8 at 4096².
+With the corrected `x @ W.T` baseline:
+
+| shape | M | fused | dequant + matmul | speedup | A/A |
+| --- | --- | --- | --- | --- | --- |
+| 4096×4096 | 1 | 0.063 ms | 0.271 ms | 4.30× | 0.49% |
+| 4096×4096 | 2 | 0.079 ms | 0.272 ms | 3.44× | 0.28% |
+| 4096×4096 | 4 | 0.082 ms | 0.271 ms | 3.30× | 0.16% |
+| 4096×4096 | 8 | 0.132 ms | 0.271 ms | 2.05× | 0.36% |
+| 24576×4096 | 1 | 0.335 ms | 3.874 ms | 11.57× | 0.20% |
+| 24576×4096 | 2 | 0.452 ms | 3.854 ms | 8.53× | 4.33% |
+| 24576×4096 | 4 | 0.441 ms | 3.867 ms | 8.76× | 1.32% |
+| 24576×4096 | 8 | 0.740 ms | 3.850 ms | 5.20× | 0.69% |
+
+At the narrow shape the plain GEMM is cheap once M>1 and the margin falls to 2.05× by M=8; at the
+wide shape the weight read dominates, so the fused arm keeps at least a 5.2× lead. The M=2 row at
+24576×4096 has the largest A/A band (4.33%), still far below its effect.
+
 ## What it would be worth
 
 If each Q6_K tensor is used once per decode token, the 128 4096×4096 projections save
@@ -44,7 +65,8 @@ whole-step number; no end-to-end decode timing was run.
 
 ## Limits
 
-* **M=1 only.** Prefill uses a GEMM and would need each decoded block reused across M rows.
+* **M is limited to 1, 2, 4, 8.** `mv6k_m` is measured for those; large-M prefill needs a
+  real GEMM tiling and re-reads the quantised weights per M panel.
 * BN=4 and 4 warps are the tuned choice; the sweep covered BN 4/8/16/32 and 4/8 warps at
   4096², not deeper block-level pipelines.
 * The comparison arm is the Triton dequant kernel plus torch matmul, not the plugin's full dispatch.
