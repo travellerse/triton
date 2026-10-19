@@ -11,17 +11,18 @@ down projections: decode each 210-byte Q6_K block in registers, multiply it by t
 and accumulate in f32, with the shipped kernel's two fp16 roundings. The materialised fp16 weight is
 never written or read.
 
-## Results (M=1, BN=8, 4 warps, median of 7 × 50 launches, same process)
+## Results (M=1, BN=4, 4 warps, median of 7 × 50 launches, same process)
 
 | shape | fused | dequant + matmul | speedup | A/A | fused throughput |
 | --- | --- | --- | --- | --- | --- |
-| 4096×4096 | **0.179 ms** | 0.728 ms | **4.07×** | 1.72% | 93.9 Gweight/s |
-| 4096×12288 | **0.518 ms** | 2.064 ms | **3.98×** | 0.39% | 97.1 Gweight/s |
-| 24576×4096 | **0.904 ms** | 6.283 ms | **6.95×** | 3.25% | 111.4 Gweight/s |
+| 4096×4096 | **0.063 ms** | 0.673 ms | **10.76×** | 0.23% | 268.2 Gweight/s |
+| 4096×12288 | **0.170 ms** | 2.008 ms | **11.78×** | 0.18% | 295.2 Gweight/s |
+| 24576×4096 | **0.332 ms** | 6.310 ms | **18.98×** | 0.43% | 302.8 Gweight/s |
 
-The Q6_K decode is heavier per weight than Q5_K (five bit-field extractions versus four plus the
-5th-bit gather), which is why the throughput is ~95–111 Gweight/s instead of ~150. The 24576×4096
-row's A/A band is 3.25%, larger than the other rows but still well below the effect.
+BN=4 instead of 8 is decisive for this format: 0.063 vs 0.176 ms at 4096² and 0.332 vs 0.924 at
+24576×4096 (2.8×), with the A/A band tightening from 3.9% to 0.43% at the largest shape. At
+~270–300 Gweight/s the kernel is close to the card's bandwidth for the 0.82 B/weight format
+(≈220–250 GB/s of weight traffic against a 384 GB/s spec).
 
 ## Correctness
 
@@ -33,12 +34,13 @@ against the plugin's `dequantize_blocks_Q6_K`.
 ## What it would be worth
 
 If each Q6_K tensor is used once per decode token, the 128 4096×4096 projections save
-`128 × (0.728 − 0.179) ≈ 70 ms` and the 16 4096×12288 down projections `16 × (2.064 − 0.518) ≈
-25 ms` versus dequant + matmul. That is arithmetic from the per-shape measurements, not a measured
+`128 × (0.673 − 0.063) ≈ 78 ms` and the 16 4096×12288 down projections `16 × (2.008 − 0.170) ≈
+29 ms` versus dequant + matmul. That is arithmetic from the per-shape measurements, not a measured
 whole-step number; no end-to-end decode timing was run.
 
 ## Limits
 
 * **M=1 only.** Prefill uses a GEMM and would need each decoded block reused across M rows.
-* BN=8 and 4 warps are untuned for this kernel.
+* BN=4 and 4 warps are the tuned choice; the sweep covered BN 4/8/16/32 and 4/8 warps at
+  4096², not deeper block-level pipelines.
 * The comparison arm is the Triton dequant kernel plus torch matmul, not the plugin's full dispatch.

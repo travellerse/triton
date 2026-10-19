@@ -90,7 +90,7 @@ def deq6k_ref(B, Out, n_blocks, BPP: tl.constexpr, BB: tl.constexpr, KK: tl.cons
     tl.store(Out + blk * KK + i, out, mask=valid)
 
 
-def fused_matvec(blocks, x, N, K, bn=8, num_warps=4):
+def fused_matvec(blocks, x, N, K, bn=4, num_warps=4):
     out = torch.empty(N, dtype=torch.float32, device=blocks.device)
     mv6k[(triton.cdiv(N, bn),)](blocks, x, out, N, K, BN=bn, KK=QK_K,
                                 BB=Q6K_BYTES, num_warps=num_warps)
@@ -180,12 +180,12 @@ def main():
 
     ok = True
     if args.check:
-        ok &= check(64, 1024, 8)
-        ok &= check(256, 4096, 8)
-        ok &= check(4096, 4096, 8)
+        ok &= check(64, 1024, 4)
+        ok &= check(256, 4096, 4)
+        ok &= check(4096, 4096, 4)
     if args.bench:
         for n, k in ((4096, 4096), (4096, 12288), (24576, 4096)):
-            bench(n, k, 8, 4, args.reps, args.batch)
+            bench(n, k, 4, 4, args.reps, args.batch)
     return 0 if ok else 1
 
 

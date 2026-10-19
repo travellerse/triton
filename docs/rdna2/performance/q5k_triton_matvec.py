@@ -112,7 +112,7 @@ def deq5k_ref(B, Out, n_blocks, BPP: tl.constexpr, BB: tl.constexpr, KK: tl.cons
     tl.store(Out + blk * KK + v, out, mask=valid)
 
 
-def fused_matvec(blocks, x, N, K, bn=8, num_warps=4):
+def fused_matvec(blocks, x, N, K, bn=4, num_warps=4):
     out = torch.empty(N, dtype=torch.float32, device=blocks.device)
     mv5k[(triton.cdiv(N, bn),)](blocks, x, out, N, K, BN=bn, KK=QK_K,
                                 BB=BLOCK_BYTES, num_warps=num_warps)
@@ -206,6 +206,8 @@ def main():
     ap.add_argument("--bench", action="store_true")
     ap.add_argument("--reps", type=int, default=7)
     ap.add_argument("--batch", type=int, default=50)
+    ap.add_argument("--sweep", action="store_true",
+                    help="time the BN/warps matrix at 4096x4096 and the top two at 24576x4096")
     args = ap.parse_args()
     if not (args.check or args.bench):
         args.check = args.bench = True
@@ -214,12 +216,18 @@ def main():
 
     ok = True
     if args.check:
-        ok &= check(64, 1024, 8)
-        ok &= check(256, 4096, 8)
-        ok &= check(4096, 4096, 8)
-    if args.bench:
+        ok &= check(64, 1024, 4)
+        ok &= check(256, 4096, 4)
+        ok &= check(4096, 4096, 4)
+    if args.sweep:
+        configs = [(4, 4), (8, 4), (16, 4), (8, 8), (16, 8), (32, 8)]
+        for bn, w in configs:
+            bench(4096, 4096, bn, w, args.reps, args.batch)
+        for bn, w in ((16, 8), (8, 4)):
+            bench(24576, 4096, bn, w, args.reps, args.batch)
+    elif args.bench:
         for n, k in ((4096, 4096), (12288, 4096), (4096, 12288), (24576, 4096)):
-            bench(n, k, 8, 4, args.reps, args.batch)
+            bench(n, k, 4, 4, args.reps, args.batch)
     return 0 if ok else 1
 
 
