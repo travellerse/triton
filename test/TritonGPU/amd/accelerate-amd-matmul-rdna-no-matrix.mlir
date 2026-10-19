@@ -77,4 +77,19 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     %0 = tt.dot_scaled %a scale %sa, %b scale %sb, %c lhs = e2m1 rhs = e2m1 {fastMath = false, lhs_k_pack = false} : tensor<16x64xi8, #blockedA>, tensor<32x2xi8, #blockedS> * tensor<32x32xi8, #blockedB>, tensor<32x2xi8, #blockedS> -> tensor<32x32xf32, #blockedO>
     tt.return %0 : tensor<32x32xf32, #blockedO>
   }
+
+  // The rhs form packs along N instead, so the generic unpack runs on axis 1.
+  // SCALED-RDNA2-LABEL: tt.func public @rdna2_dot_scaled_rhs_n_pack
+  // SCALED-RDNA2: ttg.fp4_to_fp {{.*}} {axis = 1 : i32} : tensor<64x16xi8, {{.*}} -> tensor<64x32xbf16,
+  // SCALED-RDNA2: arith.mulf
+  // SCALED-RDNA2: tt.dot {{.*}} -> tensor<32x32xf32, #
+  tt.func public @rdna2_dot_scaled_rhs_n_pack(
+      %a: tensor<32x32xi8, #blockedB>,
+      %b: tensor<64x16xi8, #blockedB>,
+      %sa: tensor<32x2xi8, #blockedS>,
+      %sb: tensor<32x2xi8, #blockedS>,
+      %c: tensor<32x32xf32, #blockedO>) -> tensor<32x32xf32, #blockedO> {
+    %0 = tt.dot_scaled %a scale %sa, %b scale %sb, %c lhs = e2m1 rhs = e2m1 {fastMath = false, rhs_k_pack = false} : tensor<32x32xi8, #blockedB>, tensor<32x2xi8, #blockedS> * tensor<64x16xi8, #blockedB>, tensor<32x2xi8, #blockedS> -> tensor<32x32xf32, #blockedO>
+    tt.return %0 : tensor<32x32xf32, #blockedO>
+  }
 }
