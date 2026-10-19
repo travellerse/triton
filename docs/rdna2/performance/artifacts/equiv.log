@@ -1,0 +1,24 @@
+  [PASS] 2D mask, multi-chunk with irregular tail [A/A control]
+  [PASS] 2D mask, multi-chunk with irregular tail  out (1, 17, 256)
+  [PASS] 2D causal mask, q == k [A/A control]
+  [PASS] 2D causal mask, q == k  out (1, 17, 256)
+  [PASS] 2D mask, b=2 [A/A control]
+  [PASS] 2D mask, b=2  out (2, 17, 256)
+  [PASS] 3D per-batch mask keeps the materialising path [A/A control]
+  [PASS] 3D per-batch mask keeps the materialising path  out (2, 17, 256)
+  [PASS] no mask [A/A control]
+  [PASS] no mask  out (1, 17, 256)
+  [PASS] 2D mask, single-chunk fast path [A/A control]
+  [PASS] 2D mask, single-chunk fast path  out (1, 17, 256)
+  [PASS] 2D mask with singleton query row [A/A control]
+  [PASS] 2D mask with singleton query row  out (1, 17, 256)
+  [PASS] 2D mask with finite bias [A/A control]
+  [PASS] 2D mask with finite bias  out (1, 17, 256)
+  [PASS] NaN position check on the fully-masked row [A/A control]
+  [PASS] NaN position check on the fully-masked row  out (1, 17, 256)
+  [PASS] fully-masked row stays NaN in the candidate arm
+
+ALL PASS
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1791958923-2897477-p1-cpu-equiv5
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10957 MiB, MemAvailable 16875 MiB
+  ! stale lock record '2894551 p1-cpu-equiv4 1024': pid 2894551 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

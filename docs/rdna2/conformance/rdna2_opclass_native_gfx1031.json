@@ -1,0 +1,189 @@
+{
+ "identity": {
+  "physical_device": "AMD Radeon RX 6700 XT",
+  "gcnArchName": "gfx1031",
+  "warp_size": 32,
+  "multi_processor_count": 20,
+  "HSA_OVERRIDE_GFX_VERSION": null,
+  "torch": "2.14.1",
+  "hip": "7.2.53211",
+  "triton_version": "3.9.0",
+  "triton_package": "/home/trave/code/triton/python/triton",
+  "emitted_target": ".amdgcn_target \"amdgpu10.31-amd-amdhsa-unknown-gfx1031\""
+ },
+ "seconds": 2.7,
+ "total": 34,
+ "failed": 0,
+ "cases": [
+  {
+   "case": "reduce tl.sum axis0 torch.float32 32x32 w1",
+   "ok": true,
+   "detail": "max_abs=9.5367431640625e-07"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float32 8x1000 w1",
+   "ok": true,
+   "detail": "max_abs=2.86102294921875e-06"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float32 16x4096 w1",
+   "ok": true,
+   "detail": "max_abs=2.288818359375e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float32 4x33 w1",
+   "ok": true,
+   "detail": "max_abs=2.384185791015625e-07"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float16 32x32 w1",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float16 8x1000 w1",
+   "ok": true,
+   "detail": "max_abs=1.9073486328125e-06"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float16 16x4096 w1",
+   "ok": true,
+   "detail": "max_abs=1.52587890625e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.float16 4x33 w1",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.bfloat16 32x32 w1",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.bfloat16 8x1000 w1",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.bfloat16 16x4096 w1",
+   "ok": true,
+   "detail": "max_abs=1.52587890625e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 torch.bfloat16 4x33 w1",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "reduce tl.sum axis0 f32 64x2048 w1",
+   "ok": true,
+   "detail": "max_abs=1.9073486328125e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 f32 64x2048 w2",
+   "ok": true,
+   "detail": "max_abs=1.1444091796875e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 f32 64x2048 w4",
+   "ok": true,
+   "detail": "max_abs=1.9073486328125e-05"
+  },
+  {
+   "case": "reduce tl.sum axis0 f32 64x2048 w8",
+   "ok": true,
+   "detail": "max_abs=1.52587890625e-05"
+  },
+  {
+   "case": "reduce tl.max over 2D axis0 f32 64x32 w4",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "atomic_add f32 contended n=32",
+   "ok": true,
+   "detail": "got=32.0"
+  },
+  {
+   "case": "atomic_add f32 contended n=256",
+   "ok": true,
+   "detail": "got=256.0"
+  },
+  {
+   "case": "atomic_add f32 contended n=1024",
+   "ok": true,
+   "detail": "got=1024.0"
+  },
+  {
+   "case": "atomic_add f32 per-lane n=256",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "atomic_max i32 per-lane",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "case": "atomic_min i32 per-lane",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "case": "atomic_max i32 contended",
+   "ok": true,
+   "detail": "got=995 want=995"
+  },
+  {
+   "case": "atomic_min i32 contended",
+   "ok": true,
+   "detail": "got=-1000 want=-1000"
+  },
+  {
+   "case": "atomic_xchg f32 keeps -0.0/+0.0/NaN bit patterns",
+   "ok": true,
+   "detail": "[-2147483648, 0, 2143289344, 1065353216] -> [-2147483648, 0, 2143289344, 1065353216]"
+  },
+  {
+   "case": "atomic_cas i32 returns the previous value and writes the new one",
+   "ok": true,
+   "detail": "old_min=1 old_max=1 now=2"
+  },
+  {
+   "case": "tl.dot torch.float16 32x32x32 (FMA path, wave32)",
+   "ok": true,
+   "detail": "max_abs=2.86102294921875e-06"
+  },
+  {
+   "case": "tl.dot torch.bfloat16 32x32x32 (FMA path, wave32)",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "tl.dot torch.float32 32x32x32 (FMA path, wave32)",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "fp8e4nv conversion matches torch",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "trans + LDS round trip 64x64 w4",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "trans + LDS round trip 128x32 w4",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  },
+  {
+   "case": "trans + LDS round trip 32x128 w2",
+   "ok": true,
+   "detail": "max_abs=0.0"
+  }
+ ]
+}

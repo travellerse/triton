@@ -1,0 +1,51 @@
+{
+ "physical_device": "AMD Radeon RX 6700 XT",
+ "gcnArchName": "gfx1030",
+ "warp_size": 32,
+ "multi_processor_count": 20,
+ "HSA_OVERRIDE_GFX_VERSION": "10.3.0",
+ "torch": "2.14.1",
+ "hip": "7.2.53211",
+ "triton_version": "3.9.0",
+ "triton_package": "/home/trave/code/triton/python/triton",
+ "emitted_target": ".amdgcn_target \"amdgpu10.30-amd-amdhsa-unknown-gfx1030\""
+}
+[PASS] reduce tl.sum axis0 torch.float32 32x32 w1  max_abs=9.5367431640625e-07
+[PASS] reduce tl.sum axis0 torch.float32 8x1000 w1  max_abs=2.86102294921875e-06
+[PASS] reduce tl.sum axis0 torch.float32 16x4096 w1  max_abs=2.288818359375e-05
+[PASS] reduce tl.sum axis0 torch.float32 4x33 w1  max_abs=2.384185791015625e-07
+[PASS] reduce tl.sum axis0 torch.float16 32x32 w1  max_abs=0.0
+[PASS] reduce tl.sum axis0 torch.float16 8x1000 w1  max_abs=1.9073486328125e-06
+[PASS] reduce tl.sum axis0 torch.float16 16x4096 w1  max_abs=1.52587890625e-05
+[PASS] reduce tl.sum axis0 torch.float16 4x33 w1  max_abs=0.0
+[PASS] reduce tl.sum axis0 torch.bfloat16 32x32 w1  max_abs=0.0
+[PASS] reduce tl.sum axis0 torch.bfloat16 8x1000 w1  max_abs=0.0
+[PASS] reduce tl.sum axis0 torch.bfloat16 16x4096 w1  max_abs=1.52587890625e-05
+[PASS] reduce tl.sum axis0 torch.bfloat16 4x33 w1  max_abs=0.0
+[PASS] reduce tl.sum axis0 f32 64x2048 w1  max_abs=1.9073486328125e-05
+[PASS] reduce tl.sum axis0 f32 64x2048 w2  max_abs=1.1444091796875e-05
+[PASS] reduce tl.sum axis0 f32 64x2048 w4  max_abs=1.9073486328125e-05
+[PASS] reduce tl.sum axis0 f32 64x2048 w8  max_abs=1.52587890625e-05
+[PASS] reduce tl.max over 2D axis0 f32 64x32 w4  max_abs=0.0
+[PASS] atomic_add f32 contended n=32  got=32.0
+[PASS] atomic_add f32 contended n=256  got=256.0
+[PASS] atomic_add f32 contended n=1024  got=1024.0
+[PASS] atomic_add f32 per-lane n=256  max_abs=0.0
+[PASS] atomic_max i32 per-lane
+[PASS] atomic_min i32 per-lane
+[PASS] atomic_max i32 contended  got=995 want=995
+[PASS] atomic_min i32 contended  got=-1000 want=-1000
+[PASS] atomic_xchg f32 keeps -0.0/+0.0/NaN bit patterns  [-2147483648, 0, 2143289344, 1065353216] -> [-2147483648, 0, 2143289344, 1065353216]
+[PASS] atomic_cas i32 returns the previous value and writes the new one  old_min=1 old_max=1 now=2
+[PASS] tl.dot torch.float16 32x32x32 (FMA path, wave32)  max_abs=2.86102294921875e-06
+[PASS] tl.dot torch.bfloat16 32x32x32 (FMA path, wave32)  max_abs=0.0
+[PASS] tl.dot torch.float32 32x32x32 (FMA path, wave32)  max_abs=0.0
+[PASS] fp8e4nv conversion matches torch  max_abs=0.0
+[PASS] trans + LDS round trip 64x64 w4  max_abs=0.0
+[PASS] trans + LDS round trip 128x32 w4  max_abs=0.0
+[PASS] trans + LDS round trip 32x128 w2  max_abs=0.0
+
+34 cases, 0 FAILED in 2.5s -> /tmp/q21-p1/rdna2_opclass.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792399770-80775-p2-src-gfx1030
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10807 MiB, MemAvailable 20884 MiB
+  ! stale lock record '57095 p2-opclass-cas 2048': pid 57095 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

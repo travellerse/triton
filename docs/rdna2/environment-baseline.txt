@@ -1,0 +1,286 @@
+Triton RDNA2 / gfx1031 support work -- M0 environment baseline
+==============================================================
+Collected: 2026-10-12 (local), by read-only probes only. No system package was
+installed, upgraded, or removed; no global environment variable was changed.
+Every value below was measured on this machine in this session, not recalled
+from project notes.
+
+Repository / git state (Stage A)
+--------------------------------
+$ pwd
+/home/trave/code/triton
+
+$ git rev-parse --show-toplevel
+/home/trave/code/triton
+
+$ git remote -v
+origin    git@github.com:travellerse/triton.git (fetch)
+origin    git@github.com:travellerse/triton.git (push)
+upstream  git@github.com:triton-lang/triton.git (fetch)
+upstream  git@github.com:triton-lang/triton.git (push)
+
+Pre-work state:
+  branch dev, HEAD b575c0c38d428a609e25487db64051a5fa7bfab8
+  "[AMD] MFMA scheduler: run on gfx942, with a CDNA3 LDS model (#12229)"
+  dated 2026-10-11 15:40:37 -0700
+  `git status --porcelain` -> 0 lines (working tree clean, so branch creation
+  was safe; git-lfs filters are configured but no LFS objects were affected)
+  `git rev-list --left-right --count upstream/main...HEAD` -> 0  0
+  `git rev-list --left-right --count origin/dev...HEAD`     -> 0  0
+  => dev == origin/dev == origin/main == upstream/main. Fork was not behind.
+
+  `git merge-base --is-ancestor 4c398335e0 HEAD` -> true
+  => the RDNA1/RDNA2 removal commit IS in current history.
+
+  `git cat-file -t 4c398335e06430cf74b6be7ee4543393e643dce0` -> commit
+  `git cat-file -t 6c14a3d5e824fcab6e8c4f7ea137ccd839c87140` -> commit
+  => both the removal commit and its parent are present locally; no fetch was
+  required for the audit.
+
+  No branch matching *rdna* existed before this work. docs/rdna2/ did not exist.
+
+Branch created this session:
+  work/rdna2-gfx1031-m0  (from clean dev at b575c0c38d)
+
+Removal commit metadata:
+  4c398335e06430cf74b6be7ee4543393e643dce0
+  Author: Lei Zhang <antiagainst@gmail.com>
+  Date:   Wed Sep 30 12:39:21 2026 -0700
+  Subject: [AMD] Remove RDNA1 and RDNA2 target support (#12042)
+  Parent:  6c14a3d5e824fcab6e8c4f7ea137ccd839c87140
+  Diffstat: 7 files changed, 9 insertions(+), 20 deletions(-)
+
+Related later removal (checked for gfx10 impact, none found):
+  4a5147d919defd3064388d4cdd202fb5e9403b61
+  "[AMD] Remove pre-CDNA2 target support (#12146)" 2026-10-06
+  -> deletes GCN5_1/CDNA1 (gfx900/906/908) only; the RDNA branch of
+     shuffleCommonImpl() and computeISAFamily()'s "RDNA ISA cases" were not
+     modified by it.
+
+OS / hardware
+-------------
+$ uname -a
+Linux cachyos-x8664 7.2.9-2-cachyos #1 SMP PREEMPT_DYNAMIC Fri, 09 Oct 2026 15:36:46 +0000 x86_64 GNU/Linux
+
+$ head -5 /etc/os-release
+NAME="CachyOS Linux"
+PRETTY_NAME="CachyOS"
+ID=cachyos
+ID_LIKE=arch
+BUILD_ID=rolling
+
+CPU: 12th Gen Intel(R) Core(TM) i5-12400F, nproc = 12
+Memory ($ free -h):
+                total  used   free   shared  buff/cache  available
+                31Gi   22Gi   3.5Gi  88Mi    5.5Gi       8.5Gi
+Swap:           31Gi   16Gi   14Gi
+Disk ($ df -h):
+  /home  (/dev/nvme1n1p2)  2.8T total, 2.1T used, 783G avail (73%)
+  /tmp   (tmpfs)           16G total, 2.1G used, 14G avail
+Note: 22 GiB of RAM already in use and 16 GiB swap in use before any work in
+this session -- relevant when budgeting a compiler rebuild.
+
+Toolchain
+---------
+$ python3 --version
+Python 3.14.7            (/usr/bin/python3, also /usr/bin/python, /usr/bin/python3.14)
+$ python3.13
+3.13.12                  (/home/trave/.local/bin/python3.13) -- torch import fails there
+
+$ clang --version
+clang version 23.1.1
+Target: x86_64-pc-linux-gnu
+
+$ hipcc --version
+HIP version: 7.2.53211-3d9ef42
+AMD clang version 22.0.0git (/srcdest/rocm-llvm f58b06dce1f9c15707c5f808fd002e18c2accf7e)
+
+ROCm: present at /opt/rocm (ROCM_PATH=/opt/rocm)
+  /opt/rocm/bin/rocminfo        present (not invoked this session)
+  /opt/rocm/bin/rocm-smi        present, working
+  /usr/bin/amdgpu-arch          present, working
+No tool was installed or removed.
+
+GPU identity -- the central environment fact
+--------------------------------------------
+$ amdgpu-arch
+gfx1031                       <- what the kernel driver reports for this GPU
+
+$ rocm-smi --showproductname / --showmeminfo vram / --showuse
+GPU[0] : AMD Radeon RX 6700 XT
+GPU[0] : VRAM Total Memory (B): 12868124672
+GPU[0] : VRAM Total Used Memory (B): 11823632384   (while user's workload ran)
+GPU[0] : VRAM Total Used Memory (B): 1211244544    (after it exited)
+GPU[0] : GPU use (%): 98  (first sample) -> 7 (later sample)
+$ rocm-smi --showpids -> "No KFD PIDs currently running"  (at probe time)
+
+$ env | grep -E '^HSA_'
+HSA_OVERRIDE_GFX_VERSION=10.3.0     <- PRE-EXISTING in the user's environment.
+                                        Not set by this session. Recorded, not
+                                        modified, per task constraints.
+
+Consequence, measured through the HIP runtime (see Python block below): with
+that override present, every HIP consumer on this machine -- including Triton's
+AMD driver -- is told the device is gfx1030, not gfx1031.
+
+Relevant env vars (only project-relevant ones inspected; full env not dumped):
+  HSA_OVERRIDE_GFX_VERSION = 10.3.0     (set, pre-existing)
+  ROCM_PATH                = /opt/rocm (set)
+  TRITON_OVERRIDE_ARCH     = <unset>
+  ROCR_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES = <unset>
+  TRITON_CACHE_DIR = <unset>   (so the Triton cache is the default ~/.triton/cache)
+  AMDGCN_USE_BUFFER_OPS = <unset>  (Triton knob default: buffer ops enabled)
+
+Python runtime facts (/usr/bin/python)
+--------------------------------------
+$ /usr/bin/python /tmp/rdna2_probe/env_probe.py
+python: 3.14.7 (main, Aug 14 2026) [GCC 16.2.1 20260810]
+torch:  2.14.1
+torch.version.hip: 7.2.53211
+torch.cuda.is_available(): True
+torch.cuda.get_device_properties(0):
+    name        = 'AMD Radeon RX 6700 XT'
+    gcnArchName = 'gfx1030'          <-- override effect, NOT the real part id
+    major/minor = 10 / 3
+    warp_size   = 32
+    multi_processor_count = 20       <-- RDNA2 WGP-mode count; 6700 XT is 40 CUs
+    max_threads_per_block = 1024
+    max_threads_per_multi_processor = 2048
+    shared_memory_per_block = 65536
+    shared_memory_per_multiprocessor = 65536   (64 KiB LDS per CU)
+    L2_cache_size = 3145728          (3 MiB)
+    memory_bus_width = 192
+    regs_per_multiprocessor = 131072
+    total_memory = 12868124672
+
+Two Tritons exist on this machine -- keep them separate
+--------------------------------------------------------
+(1) INSTALLED / prebuilt package (this is what any user script imports today):
+    triton.__version__ = 3.5.1
+    triton.__file__    = /usr/lib/python3.14/site-packages/triton/__init__.py
+    triton.runtime.driver.active.get_current_target()
+                       = GPUTarget(backend='hip', arch='gfx1030', warp_size=32)
+    This is a distribution build predating commit 4c398335. Its behaviour says
+    nothing about the source tree under development.
+
+(2) SOURCE TREE under development: /home/trave/code/triton (branch
+    work/rdna2-gfx1031-m0, HEAD b575c0c38d). NOT importable as-is in this
+    session -- see build state below.
+
+Also checked: /home/trave/code/model_test/.pixi/envs/default/bin/python (the
+interpreter running the user's ComfyUI) has NO triton module
+(ModuleNotFoundError), i.e. that stack resolves Triton some other way and was
+not used for probing.
+
+Build state of the source tree
+------------------------------
+BUILD_DIR = /home/trave/code/triton/build/cmake.linux-x86_64-cpython-3.14
+  bin/triton-opt  892,012,040 B, mtime 2026-09-02 18:38
+  git commit nearest that mtime: 61c02bcdba "[AMD] Enable buffer atomics on
+  RDNA3 (#11535)" (2026-09-02) -- i.e. the binary PREDATES the RDNA removal
+  and therefore still contains the RDNA1/RDMA2 code paths.
+  CMakeCache.txt LLVM_DIR = /home/trave/.triton/llvm/llvm-b010a18d-ubuntu-x64-1/lib/cmake/llvm
+  That LLVM is present on disk (~/.triton/llvm/llvm-b010a18d-ubuntu-x64-1), so
+  there is no LLVM-availability blocker for a rebuild.
+
+Rebuild scope measurement (dry run only, nothing was compiled):
+  $ ninja -n triton-opt   ->   "[0/1] Re-running CMake..."  (CMakeLists changed,
+      so the real DAG is unknown until reconfigure)
+  $ git diff --name-only 61c02bcdba..HEAD | grep -cE '\.(cpp|cc|h|td)$'  -> 305
+  $ git diff --name-only 61c02bcdba..HEAD -- third_party/amd | wc -l      -> 120
+  => a rebuild of triton-opt is effectively a large compile (305 native TUs
+  drifted). Not started this round, per task constraint 7 / Stage F scope.
+
+Bundled LLVM (Triton's actual dependency) gfx1031 checks
+--------------------------------------------------------
+$ llc --version: from ~/.triton/llvm/llvm-b010a18d-ubuntu-x64-1/bin
+
+Target recognition test (probe.ll, minimal amdgpu_kernel):
+  $ llc -mtriple=amdgcn-amd-amdhsa -mcpu=gfx1030 -filetype=null probe.ll -> clean
+  $ llc -mtriple=amdgcn-amd-amdhsa -mcpu=gfx1031 -filetype=null probe.ll -> clean
+  $ llc -mtriple=amdgcn-amd-amdhsa -mcpu=gfx1099 -filetype=null probe.ll
+      -> "'gfx1099' is not a recognized processor for this target"
+  => gfx1031 IS a known processor in the LLVM Triton links against.
+
+gfx1030 vs gfx1031 codegen comparison:
+  $ diff <(llc -mcpu=gfx1030 -filetype=asm probe.ll) <(llc -mcpu=gfx1031 ...)
+  -> only differences are the ".amdgcn_target" / "amdhsa.target" name strings.
+     All instructions and metadata identical for the probed kernel.
+
+Instruction availability, via clang builtins (correct syntax, no hand-asm typos):
+  $ clang --target=amdgcn-amd-amdhsa -mcpu=gfx1031 -S builtins2.cpp
+      -> selected v_permlanex16_b32   (OK on gfx1031)
+      -> ds_bpermute path compiled OK
+  $ same with -mcpu=gfx942
+      -> error: '__builtin_amdgcn_permlanex16' needs target feature gfx10-insts
+  => v_permlaneX16 exists on the GFX10 family; it is gated on feature
+     "gfx10-insts", which gfx942 lacks and gfx1031/gfx1100 have.
+
+  $ clang -cc1-style hand-written v_wmma_f32_16x16x16_f16 ... -mcpu=gfx1031
+      -> error: instruction not supported on this GPU (gfx1031)
+     same mnemonic on -mcpu=gfx1100 -> "invalid operand for instruction"
+     (opcode recognized, only my operands were wrong)
+  => WMMA 16x16x16 f16 is NOT in the gfx1031 ISA; it is RDNA3+. This is a
+     hardware limit, not a Triton gap. (Graded: observed assembler capability
+     message; the operand-syntax difference between the two targets is what
+     makes this readable.)
+
+  Negative control that FAILED: `llc -mattr=+bogus-feature-xyz` was silently
+  accepted on gfx1031/gfx1100/gfx1250, so -mattr is NOT a valid probe for
+  feature existence. Any conclusion drawn from -mattr is excluded below.
+
+Stage F runtime probe (guarded by GPU idleness)
+-----------------------------------------------
+Two samples were taken before deciding. The first showed the user's ComfyUI job
+active (PID 1640846, "./.pixi/envs/default/bin/python main.py --listen 0.0.0.0
+--use-quad-cross-attention --enable-triton-backend --fp16-unet --cpu-vae ...
+--port 8188", 98% GPU use, 11.8/12.9 GiB VRAM). All GPU execution was therefore
+deferred; that workload exited before the probe ran, and the probe only started
+once rocm-smi reported no KFD PIDs and ~1.2 GiB VRAM used.
+
+$ cd /tmp/rdna2_probe && /usr/bin/python stage_f_probe.py
+ (installed triton 3.5.1; masked elementwise add, n=1024, grid=(1,), BLOCK=1024,
+  each dtype launched once, compared against torch x+y)
+
+  HSA_OVERRIDE_GFX_VERSION: 10.3.0
+  TRITON_OVERRIDE_ARCH: <unset>
+  torch 2.14.1 hip 7.2.53211, available True
+  device: AMD Radeon RX 6700 XT, gcnArchName gfx1030, warp 32, CUs 20, LDS 65536
+  triton 3.5.1 @ /usr/lib/python3.14/site-packages/triton/__init__.py
+  active target: GPUTarget(backend='hip', arch='gfx1030', warp_size=32)
+  [fp32] launch=OK match=True
+  [fp16] launch=OK match=True
+  [bf16] launch=OK match=True
+  emitted ISA header: .amdgcn_target "amdgcn-amd-amdhsa--gfx1030"
+  emitted ops (top): v_mov_b32_e32 x16, v_add_f32_e32 x8, v_add_co_u32 x6,
+                    v_add_co_ci_u32_e64 x6, v_lshlrev_b64 x4,
+                    v_ashrrev_i32_e32 x2, v_lshl_or_b32 x1, v_cmp_gt_i32_e32 x1
+  summary: fp32/fp16/bf16 all "compile+run OK, correct=True"
+
+Scope limit of that result: it validates the INSTALLED 3.5.1 package plus the
+ROCm/HIP/LLVM stack on this GPU. It does not demonstrate that the source tree on
+work/rdna2-gfx1031-m0 can target gfx1030 or gfx1031. No probe of the source tree
+was executed on GPU this round.
+
+NOT collected this round
+------------------------
+- rocminfo full output (rocm-smi + amdgpu-arch + torch already answered the
+  questions needed; rocminfo spawns a KFD context).
+- GPU clock/power/throttle telemetry; no benchmark of any kind.
+- Triton cache contents / any cache purge.
+- Verification that the source tree builds (requires the large rebuild above).
+
+Artifacts
+---------
+/tmp/rdna2_probe/env_probe.py        read-only environment probe
+/tmp/rdna2_probe/stage_f_probe.py    Stage F compile+run probe (installed triton)
+/tmp/rdna2_probe/probe.ll            minimal AMDGCN module for llc target tests
+/tmp/rdna2_probe/builtins2.cpp       clang builtin availability tests
+/tmp/rdna2_probe/isa*.s              hand-written asm attempts (see caveat:
+                                     many "invalid instruction" results there
+                                     were MY syntax errors, not capability
+                                     rejections -- discarded as evidence)
+/tmp/rdna2_probe/family_probe.cpp    standalone transcription of
+                                     parseGfxArch/computeISAFamily from the
+                                     current tree; output reproduced in
+                                     initial-audit.md section 5.1

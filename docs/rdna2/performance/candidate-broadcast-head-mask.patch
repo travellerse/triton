@@ -1,0 +1,35 @@
+diff --git a/comfy/ldm/modules/attention.py b/comfy/ldm/modules/attention.py
+index 4b1a12828..87840583d 100644
+--- a/comfy/ldm/modules/attention.py
++++ b/comfy/ldm/modules/attention.py
+@@ -1,4 +1,5 @@
+ import math
++import os
+ import sys
+ import inspect
+ import json
+@@ -314,6 +315,9 @@ def attention_basic(q, k, v, heads, mask=None, attn_precision=None, skip_reshape
+         )
+     return out
+ 
++BROADCAST_HEAD_MASK = os.environ.get("Q21_BROADCAST_HEAD_MASK", "0") == "1"
++
++
+ @wrap_attn
+ def attention_sub_quad(query, key, value, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, query_chunk_size=None, kv_chunk_size=None, contiguous_key=False, inplace_softmax=False, fused_attention=None, **kwargs):
+     attn_precision = get_attn_precision(attn_precision, query.dtype)
+@@ -387,7 +391,13 @@ def attention_sub_quad(query, key, value, heads, mask=None, attn_precision=None,
+             bs = 1
+         else:
+             bs = mask.shape[0]
+-        mask = mask.reshape(bs, -1, mask.shape[-2], mask.shape[-1]).expand(b, heads, -1, -1).reshape(-1, mask.shape[-2], mask.shape[-1])
++        if BROADCAST_HEAD_MASK and bs == 1 and len(mask.shape) == 2:
++            # A shared (q, k) mask is the same for every head, and every consumer below
++            # (chunk slicing, the in-place score add) broadcasts dim 0. Materialising the
++            # (b * heads, q, k) copy costs one score-matrix-sized tensor per call.
++            mask = mask.unsqueeze(0)
++        else:
++            mask = mask.reshape(bs, -1, mask.shape[-2], mask.shape[-1]).expand(b, heads, -1, -1).reshape(-1, mask.shape[-2], mask.shape[-1])
+ 
+     hidden_states = efficient_dot_product_attention(
+         query,

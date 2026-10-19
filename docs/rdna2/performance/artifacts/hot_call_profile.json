@@ -1,0 +1,51 @@
+{
+ "shapes": {
+  "b": 1,
+  "heads": 32,
+  "dim_head": 128,
+  "q_tokens": 5120,
+  "k_tokens": 10287,
+  "query_chunk_size": 1024,
+  "chunks": 5,
+  "mask": null,
+  "dtype": "float16"
+ },
+ "source_of_shapes": [
+  "reports/43:59 (5167+5120=10287)",
+  "reports/42:190",
+  "model.py:403 cached -> target rows only"
+ ],
+ "call_median_ms": 116.10437300987542,
+ "aggregate_tflops": 7.43,
+ "gemm_flops_total": 862936104960,
+ "kernels": [
+  {
+   "kernel": "Cijk_Alik_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1_AMA",
+   "count": 5,
+   "ms": 65.987
+  },
+  {
+   "kernel": "Cijk_Ailk_Bljk_HHS_BH_MT128x256x16_SN_1LDSB0_APM1_ABV0_ACED0_AF0EM1_AF1EM1_AMA",
+   "count": 5,
+   "ms": 25.168
+  },
+  {
+   "kernel": "void at::native::(anonymous namespace)::cunn_SoftMaxForwardFast<8, c10::Half, ",
+   "count": 5,
+   "ms": 24.376
+  },
+  {
+   "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_contig<at::native:",
+   "count": 1,
+   "ms": 0.284
+  },
+  {
+   "kernel": "void at::native::elementwise_kernel_manual_unroll<128, 8, at::native::gpu_kern",
+   "count": 1,
+   "ms": 0.261
+  }
+ ],
+ "hsa_override": "10.3.0",
+ "device": "AMD Radeon RX 6700 XT",
+ "peak_allocated_mib": 1550.6
+}
