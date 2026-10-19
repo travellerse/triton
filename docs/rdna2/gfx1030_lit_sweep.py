@@ -9,6 +9,7 @@ Each RUN line is executed verbatim, with only the gfx-arch= value rewritten, so 
 gap to fix or a legitimately arch-specific test. Both outcomes get recorded.
 """
 
+import argparse
 import os
 import pathlib
 import re
@@ -16,11 +17,16 @@ import shlex
 import subprocess
 import sys
 
-BUILD = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else
-                     "/home/trave/code/triton/build/cmake.linux-x86_64-cpython-3.14")
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--build", default="/home/trave/code/triton/build/cmake.linux-x86_64-cpython-3.14")
+_ap.add_argument("--target", default="gfx1030",
+                 help="arch to substitute into every gfx-arch= knob (gfx1031 for the "
+                      "native ISA behind HSA_OVERRIDE_GFX_VERSION)")
+_args = _ap.parse_args()
+BUILD = pathlib.Path(_args.build)
 SRC = pathlib.Path("/home/trave/code/triton/test")
-TARGET = "gfx1030"
-DIRS = ["Conversion/amd", "TritonGPU/amd", "TritonAMDGPUTransforms"]
+TARGET = _args.target
+DIRS = ["Conversion", "TritonGPU", "TritonAMDGPUTransforms", "Triton", "Gluon", "Proton"]
 
 RUN = re.compile(r"^//\s*RUN:\s*(.*)$")
 APPLY = re.compile(r"triton-opt\b")

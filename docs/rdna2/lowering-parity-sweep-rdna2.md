@@ -6,13 +6,14 @@ Output: [conformance/gfx1030_lit_sweep.txt](file:///home/trave/code/triton/docs/
 
 ## Method
 
-Every `*.mlir` under `test/Conversion/amd`, `test/TritonGPU/amd`,
-`test/TritonAMDGPUTransforms` that runs `triton-opt ... | FileCheck` with a `gfx-arch=`
-knob gets each of its RUN lines re-executed with **only** the arch value rewritten to
-`gfx1030`. `triton-opt` needs no device, so this is a full-backend static parity probe.
+Every `*.mlir` under `test/Conversion`, `test/TritonGPU`, `test/TritonAMDGPUTransforms`,
+`test/Triton`, `test/Gluon`, `test/Proton` that runs `triton-opt ... | FileCheck` with a
+`gfx-arch=` knob gets each of its RUN lines re-executed with **only** the arch value
+rewritten to `gfx1030`. `triton-opt` needs no device, so this is a full-backend static
+parity probe.
 
 ```
-RUN lines rewritten to gfx1030: 171 of 226 arch-aware runs; pass=80 fail=91
+RUN lines rewritten to gfx1030: 175 of 402 arch-aware runs; pass=80 fail=95
 ```
 
 A failure means *that test's own expectations* do not hold on RDNA2. Because many of these
@@ -33,7 +34,7 @@ arch and by file name; the RDNA3/RDNA1-origin failures are the only interesting 
 | 1 | `ocp_fp8_cvt_lowering.mlir` | `HWCVT` expects hardware fp8 pack/unpack (gfx1170+); RDNA2 emulates | ISA boundary, already covered by the fp8 conformance cases |
 | 6 | `amd-convert-buffer-ops-atomic-{rmw,fadd,fminmax}.mlir` | `supportsBufferAtomicRMW()` excludes RDNA2 | the M1 decision, gate kept closed with its own pinned tests |
 
-The remaining 78 failures come from `gfx942`/`gfx950`/`gfx1250`/`gfx1200` lines: MFMA,
+The remaining 82 failures come from `gfx942`/`gfx950`/`gfx1250`/`gfx1200` lines: MFMA,
 async copy, `tdm`, cluster/`mbarrier`, `ds_transpose`, scaled cvt, warp-id. Those features
 do not exist on RDNA2 at all, so rewriting them says nothing.
 
@@ -48,8 +49,8 @@ feature or one of the two gated behaviours (buffer atomics, cache-policy aux).
 * Coverage is the lit suite, not the frontend: it says nothing about runtime behaviour,
   numerical results, or kernel quality. Those remain covered by the on-device conformance
   probe (43/43 at native gfx1031) and its own limits.
-* 226 arch-aware lines exist in total; 55 have no `gfx-arch=` knob (transform passes keyed
-  on encoding attributes instead) and are not exercised here.
+* 402 arch-aware RUN lines exist across the tree; 227 have no `gfx-arch=` knob at all
+  (transform passes keyed on encoding attributes instead) and are not exercised here.
 * Passing with `gfx1030` substituted is *equality with that test's RDNA3/CDNA expectations*.
   Where RDNA2 legitimately differs (no WMMA, no HW fp8 cvt) the test cannot pass, so this
   sweep detects silence-but-wrong only for the parts that are arch-independent.
