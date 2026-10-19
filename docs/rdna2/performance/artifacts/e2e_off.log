@@ -1,0 +1,10 @@
+gpu_health: OK total=12272MiB used=1919MiB free=10353MiB no-kfd-pids
+gpu_health: OK total=12272MiB used=1911MiB free=10361MiB no-kfd-pids
+gpu_lock: ACQUIRED tag=e2e_off budget=8000MiB floor=1200MiB headroom=1170MiB
+[e2e_off] 37a75f09-f865-41dc-9410-c7e6b9d68a84
+[e2e_off] ...30s
+[e2e_off] ...60s
+[e2e_off] ...90s
+[e2e_off] ...120s
+[e2e_off] ...150s
+[e2e_off] ...182s

@@ -1,0 +1,2 @@
+wf_off: 512x768 steps=8 seed=1234567890 prefix=p1_e2e_off
+wf_on: 512x768 steps=8 seed=1234567890 prefix=p1_e2e_on
