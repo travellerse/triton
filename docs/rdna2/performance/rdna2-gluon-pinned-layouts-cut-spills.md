@@ -53,7 +53,8 @@ reported "Gluon better" at one tile purely because it was doing less math.
 | 64×64 | 128 | 2 | 2708 | 3879 | **1951** (−28%) |
 
 Tally: `[8,4]` → 1 win / 9 losses; `[4,8]` → **8 wins / 2 losses**, largest at the tiles that matter
-for `head_dim=128` (64×64: −26% and −28%).
+for `head_dim=128` (64×64: −26% and −28%). The six-variant sweep below supersedes reading this as
+"`[4,8]` is the good one": the winner depends on the tile.
 
 ✱ Note `64×32/64/1`: both pinned variants beat auto there, so that row is not the reason for the
 conclusion.
@@ -64,6 +65,29 @@ auto-layout wins 9 of 10 — Gluon layout control is not the lever"; changing no
 about Gluon per se, and a single pinned layout is not evidence — the two variants bracket how much
 this one knob moves register pressure. (This section has since been corrected twice: first the arms
 were unequal, then the reduction "blocker" was my own repro bug.)
+
+## Layout family sweep: the effect is 2.6x, and no single variant wins
+
+`--sweep-layouts` runs six pinned variants per tile against the compiler's own choice, keeping only
+variants that emit the same number of `v_dot*` instructions (so every comparison is same-work).
+`head_dim=128`, gfx1030, `vgpr_spill_count`:
+
+| tile | W | auto | best pinned | gain | best variant | spread across the 6 variants |
+| --- | --- | --- | --- | --- | --- | --- |
+| 64×64 | 1 | 5674 | **3582** | −36.9% | threads `[8,4]`, order `[0,1]` | 3582 … 9348 (2.6×) |
+| 64×64 | 2 | 2708 | **1907** | −29.6% | threads `[4,8]`, warps over N | 1907 … 8439 (4.4×) |
+| 64×32 | 1 | 2957 | **2646** | −10.5% | threads `[4,8]` | 2646 … 4923 (1.9×) |
+| 64×32 | 2 | 1124 | **1010** | −10.1% | threads `[4,8]` | 1010 … 4162 (4.1×) |
+
+Two things this adds beyond the two-variant result above:
+
+* **The layout choice dominates everything else about register pressure** — up to 4.4× between the
+  best and worst way to tile the same computation across the same warps.
+* **There is no single better layout.** `[8,4]/order=[0,1]` wins the 64×64 single-warp case, `[4,8]`
+  with warps over N wins 64×64 two-warp, and plain `[4,8]` wins both 64×32 tiles. So the follow-up
+  is not "make the pass pick `[4,8]`" — it is that the selection is tile-dependent and the current
+  choice is never the best of these six at `head_dim=128`. Any heuristic change has to be justified
+  per shape class, which is exactly the kind of claim that needs hardware, not a spill table.
 
 ## The interesting consequence for Triton itself
 

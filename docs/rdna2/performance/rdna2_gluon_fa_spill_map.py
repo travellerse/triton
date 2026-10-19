@@ -57,14 +57,45 @@ def fa_plain(Q, K, V, O, SQ, SKC, sm,
     tl.store(O + offs_m[:, None] * HD + offs_d[None, :], acc / SKC)
 
 
-def blocked(m, n, warps):
-    """Blocked layout for an m x n tile, or None when it cannot tile the shape exactly."""
-    spm = m // (THREADS[0] * warps)
-    spn = n // THREADS[1]
-    if spm < 1 or spn < 1 or spm * THREADS[0] * warps != m or spn * THREADS[1] != n:
+def blocked(m, n, warps, threads=(None, None), cta_axis=0, order=(1, 0)):
+    """Blocked layout for an m x n tile, or None when it cannot tile the shape exactly.
+
+    cta_axis picks which dimension the warps spread over; threads overrides the [8,4] default so
+    the sweep can probe operand shapes rather than one hand-picked layout.
+    """
+    tw = list(THREADS if threads == (None, None) else threads)
+    per_cta = [warps, 1] if cta_axis == 0 else [1, warps]
+    spm = m // (tw[0] * per_cta[0])
+    spn = n // (tw[1] * per_cta[1])
+    if spm < 1 or spn < 1 or spm * tw[0] * per_cta[0] != m or spn * tw[1] * per_cta[1] != n:
         return None
-    return gl.BlockedLayout(size_per_thread=[spm, spn], threads_per_warp=list(THREADS),
-                            warps_per_cta=[warps, 1], order=[1, 0])
+    return gl.BlockedLayout(size_per_thread=[spm, spn], threads_per_warp=tw,
+                            warps_per_cta=per_cta, order=list(order))
+
+
+VARIANTS = [
+    ("threads 8,4 warps@M", dict(threads=(8, 4), cta_axis=0)),
+    ("threads 4,8 warps@M", dict(threads=(4, 8), cta_axis=0)),
+    ("threads 4,8 warps@N", dict(threads=(4, 8), cta_axis=1)),
+    ("threads 2,16 warps@M", dict(threads=(2, 16), cta_axis=0)),
+    ("threads 16,2 warps@M", dict(threads=(16, 2), cta_axis=0)),
+    ("threads 8,4 order01", dict(threads=(8, 4), cta_axis=0, order=(0, 1))),
+]
+
+
+def gluon_layouts_named(bm, bn, hd, warps, kw):
+    la = blocked(bm, hd, warps, **kw)
+    ls = blocked(bm, bn, warps, **kw)
+    lq = blocked(bm, hd, warps, **kw)
+    lv = blocked(bn, hd, warps, **kw)
+    lk = blocked(hd, bn, warps, **kw)
+    if None in (la, ls, lq, lv, lk):
+        return None
+    return dict(LQ=lq, LK=lk, LV=lv, LA=la, LS=ls,
+                A0=gl.DotOperandLayout(operand_index=0, parent=ls, k_width=0),
+                B1=gl.DotOperandLayout(operand_index=1, parent=ls, k_width=0),
+                P0=gl.DotOperandLayout(operand_index=0, parent=la, k_width=0),
+                V1=gl.DotOperandLayout(operand_index=1, parent=la, k_width=0))
 
 
 @gluon.jit
@@ -132,8 +163,9 @@ def triton_measure(arch, bm, bn, hd, warps):
                                  options={"num_warps": warps, "num_stages": 1}))
 
 
-def gluon_measure(arch, bm, bn, hd, warps):
-    layouts = gluon_layouts(bm, bn, hd, warps)
+def gluon_measure(arch, bm, bn, hd, warps, kw=None):
+    layouts = (gluon_layouts_named(bm, bn, hd, warps, kw) if kw
+               else gluon_layouts(bm, bn, hd, warps))
     if layouts is None:
         raise ValueError("layout does not tile the shape")
     src = GluonASTSource(
@@ -148,14 +180,53 @@ def gluon_measure(arch, bm, bn, hd, warps):
                                  options={"num_warps": warps, "num_stages": 1}))
 
 
+def sweep_layouts(arch, configs):
+    """Best pinned layout per tile vs the compiler's own choice: sizes the gap a heuristic fix
+    would close, and shows whether one hand-picked layout is enough."""
+    print(f"arch={arch}  best of {len(VARIANTS)} pinned layouts per tile vs auto")
+    print(f"{'BMxBN':>9} {'HD':>4} {'W':>2} | {'auto':>6} | {'best':>6} {'gain%':>7}  best variant")
+    for bm, bn, hd, w in configs:
+        try:
+            tsp, _, tdots = triton_measure(arch, bm, bn, hd, w)
+        except Exception as e:  # noqa: BLE001
+            print(f"{bm:>4}x{bn:<4} {hd:>4} {w:>2} | auto FAILS {' '.join(str(e).split())[-60:]}")
+            continue
+        best, best_name, best_dots = tsp, "auto", tdots
+        per_variant = []
+        for name, kw in VARIANTS:
+            try:
+                gsp, _, gdots = gluon_measure(arch, bm, bn, hd, w, kw)
+            except Exception:  # noqa: BLE001 - variant may not tile the shape
+                continue
+            if gdots != tdots:
+                continue  # not the same work: cannot be compared
+            per_variant.append((gsp, name, gdots))
+            if gsp < best:
+                best, best_name = gsp, name
+        gain = 100.0 * (tsp - best) / tsp if tsp else 0.0
+        detail = "  ".join(f"{n}={v}" for v, n, _ in sorted(per_variant))
+        print(f"{bm:>4}x{bn:<4} {hd:>4} {w:>2} | {tsp:>6} | {best:>6} {gain:>6.1f}%  "
+              f"{best_name}   [{detail}]")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--sweep-layouts", action="store_true",
+                    help="best of a layout family per tile vs auto, instead of one fixed layout")
     ap.add_argument("--arch", default="gfx1030")
     ap.add_argument("--threads", default="8,4",
                     help="threads_per_warp for the pinned layouts, e.g. 8,4 or 4,8")
     args = ap.parse_args()
     global THREADS
     THREADS = [int(x) for x in args.threads.split(",")]
+
+    if args.sweep_layouts:
+        configs = [(bm, bn, hd, w)
+                   for bm, bn in [(64, 64), (64, 32)]
+                   for hd in [128]
+                   for w in [1, 2] if bm >= w * 32]
+        return sweep_layouts(args.arch, configs)
 
     print(f"arch={args.arch}  pinned threads_per_warp={THREADS}  both arms: same math (fixed shift, no reductions), SK={SK}")
     print("static register pressure only -- selects candidates, never ranks speed\n")
