@@ -5,8 +5,8 @@
 // rocdl.raw.ptr.buffer.load/store operations.
 //
 // GFX10 buffer ops expose three cache fields. Bit positions per the AMD "RDNA 2" ISA Reference
-// Guide section 13.6.1 (MTBUF), confirmed by llvm-objdump of the words Triton's LLVM emits
-// (test/LLVMIR/rdna2-buffer-load-cache-policy.ll pins that side):
+// Guide section 13.6.2 (MUBUF; 13.6.1 MTBUF uses the same positions), confirmed by llvm-objdump of the words Triton's LLVM emits
+// (test/LLVMIR/rdna2-buffer-cache-policy.ll pins that side):
 //   aux bit 0 -> GLC (instr bit 14)  load: miss L0 and refetch, invalidating a matching L0 line
 //   aux bit 1 -> SLC (instr bit 54)  L2 policy, only meaningful together with DLC
 //   aux bit 2 -> DLC (instr bit 15)  load: L1 miss-evict; store: L2 bypass
@@ -16,12 +16,13 @@
 // Per-modifier values follow the ISA guide's RDNA2 behaviour tables (section 8.1.10, tables 38
 // for loads and 39 for stores/atomics):
 //   Load  .cg -> 5 (GLC|DLC: L0 bypassed, L1 miss-evict, L2 stays LRU)
-//   Load  .cs -> 6 (SLC|DLC: L1 miss-evict, L2 hit-no-allocate)
-//   Load  .cv -> 5 (identical to .cg: no load encoding can bypass L2, and the ordering half of
-//                   .cv is a s_waitcnt that aux cannot express)
+//   Load  .cs -> 2 (SLC: L2 stream -- the same combination LLVM's GFX10 non-temporal load uses)
+//   Load  .cv -> 5 (identical to .cg: no load encoding can bypass L2, and the volatile ordering
+//                   half of .cv keys off the memory operand's volatile flag, which an aux value
+//                   does not set -- so this row is cache policy only, not a volatile read)
 //   Store .cs -> 2 (SLC: L2 stream)
-//   Store .wt -> 5 (GLC|DLC: L2 bypass + no L0 persistence; write-around, not architectural
-//                   write-through-to-system-memory)
+//   Store .wt -> 4 (DLC: L2 bypass; write-around, not write-through-to-system-memory. GLC plays
+//                   no part: stores behave identically for GLC 0 and 1)
 //   Load  .ca -> 0, Store .cg -> 0 (controls: the default rows really do emit nothing)
 //
 // aux is the final operand of rocdl.raw.ptr.buffer.load/store, so pinning every lowered access
@@ -45,10 +46,10 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.thr
 #blocked = #ttg.blocked<{sizePerThread = [4], threadsPerWarp = [32], warpsPerCTA = [1], order = [0]}>
 
 // CHECK-LABEL: buffer_load_cs
-// CHECK-COUNT-4: rocdl.raw.ptr.buffer.load {{.*}}, 6 :
+// CHECK-COUNT-4: rocdl.raw.ptr.buffer.load {{.*}}, 2 :
 module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.threads-per-warp" = 32 : i32} {
   tt.func @buffer_load_cs(%arg0: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %offset: tensor<128xi32, #blocked> {tt.divisibility = 16 : i32}) {
-    // .cs load on RDNA2: aux = 6 (SLC|DLC)
+    // .cs load on RDNA2: aux = 2 (SLC)
     %ret = amdg.buffer_load %arg0[%offset] {cachePolicy = #tt.cache_policy<cache_modifier = cs, eviction_policy = evict_normal>} : !tt.ptr<f32> -> tensor<128xf32, #blocked>
     tt.return
   }
@@ -102,11 +103,11 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.thr
 #blocked = #ttg.blocked<{sizePerThread = [4], threadsPerWarp = [32], warpsPerCTA = [1], order = [0]}>
 
 // CHECK-LABEL: buffer_store_wt
-// CHECK-COUNT-4: rocdl.raw.ptr.buffer.store {{.*}}, 5 :
+// CHECK-COUNT-4: rocdl.raw.ptr.buffer.store {{.*}}, 4 :
 module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.threads-per-warp" = 32 : i32} {
   tt.func @buffer_store_wt(%value: tensor<128xf32, #blocked>, %arg0: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %offset: tensor<128xi32, #blocked> {tt.divisibility = 16 : i32}) {
     %c256_i32 = arith.constant 256 : i32
-    // .wt store on RDNA2: aux = 5 (GLC|DLC: L2 bypass, write-around not write-through)
+    // .wt store on RDNA2: aux = 4 (DLC: L2 bypass, write-around not write-through)
     amdg.buffer_store %value, %arg0[%offset] stride = %c256_i32 {cachePolicy = #tt.cache_policy<cache_modifier = wt, eviction_policy = evict_normal>} : !tt.ptr<f32> -> tensor<128xf32, #blocked>
     tt.return
   }

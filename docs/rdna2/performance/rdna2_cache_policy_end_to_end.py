@@ -7,7 +7,8 @@ policy back out of the emitted ISA:
 
   * from the ``.amdgcn`` text, the modifier fields the encoder printed (glc / slc / dlc);
   * from the ``hsaco``, the same fields decoded out of the instruction words at the positions the
-    AMD "RDNA 2" ISA Reference Guide gives for MTBUF (section 13.6.1): GLC = bit 14, DLC = bit 15,
+    AMD "RDNA 2" ISA Reference Guide gives for MUBUF (section 13.6.2; MTBUF in 13.6.1 agrees):
+    GLC = bit 14, DLC = bit 15,
     SLC = bit 54.
 
 Bits, not names, are the assertion: the names come from the same disassembler that produced them.
@@ -28,16 +29,61 @@ import triton.language as tl
 from triton.backends.compiler import GPUTarget
 from triton.compiler import ASTSource
 
-# (field name, aux bit Triton must set, instruction word, bit within that word) per ISA 13.6.1.
+# (field name, aux bit Triton must set, instruction word, bit within that word) per ISA 13.6.2.
 FIELDS = [("glc", 0, 0, 14), ("slc", 1, 1, 22), ("dlc", 2, 0, 15)]
 
 # What getCtrlBitsForCacheModifierOnRDNA2 in Utility.cpp promises, keyed by (op, modifier).
 EXPECTED_AUX = {
-    ("load", "none"): 0, ("load", ".ca"): 0, ("load", ".cg"): 5, ("load", ".cs"): 6,
+    ("load", "none"): 0, ("load", ".ca"): 0, ("load", ".cg"): 5, ("load", ".cs"): 2,
     ("load", ".cv"): 5,
     ("store", "none"): 0, ("store", ".wb"): 0, ("store", ".cg"): 0, ("store", ".cs"): 2,
-    ("store", ".wt"): 5,
+    ("store", ".wt"): 4,
 }
+
+# The two rows the table cannot express exactly. Checked here because the claim is about the
+# emitted instructions, not about the aux integer: aux alone never marks an access volatile, so
+# .cv must be shown to carry only its cache-policy half.
+@triton.jit
+def cv_kern(inp, outp, N: tl.constexpr, CM: tl.constexpr, VOL: tl.constexpr):
+    offs = tl.arange(0, N)
+    x = tl.load(inp + offs, cache_modifier=CM, volatile=VOL)
+    tl.store(outp + offs, x * 2.0)
+
+
+def compile_cv(cm, vol, cpu, n=1024):
+    src = ASTSource(
+        fn=cv_kern, signature={"inp": "*fp32", "outp": "*fp32"},
+        constexprs={"N": n, "CM": cm, "VOL": vol},
+        attrs={(0,): [["tt.divisibility", 16]], (1,): [["tt.divisibility", 16]]},
+    )
+    return triton.compile(src, target=GPUTarget("hip", cpu, 32),
+                          options={"num_warps": 4, "num_stages": 1}).asm["amdgcn"]
+
+
+def check_cv_limitations(cpu):
+    """Report what .cv does and does not buy, and that volatile=True leaves the buffer path."""
+    rows = []
+    for label, (cm, vol) in {"cv": (".cv", False), "volatile": ("", True),
+                             "cv+volatile": (".cv", True)}.items():
+        lines = [l.strip() for l in compile_cv(cm, vol, cpu).splitlines()]
+        loads = [split_inst(l) for l in lines]
+        loads = [l for l in loads if l and l[0].startswith(("buffer_load", "global_load"))]
+        kind = "buffer" if loads and loads[0][0].startswith("buffer_load") else "global"
+        fields = sorted({f for _, fs in loads for f in fs})
+        extra = sorted({op for op in ("s_memrealize", "buffer_inv", "gl1_cache_inv")
+                        if any(l.startswith(op) for l in lines)})
+        waits = sorted({w for l in lines if l.startswith("s_waitcnt")
+                        for w in re.findall(r"\w+(?=\()", l)})
+        rows.append((label, kind, fields, waits, extra))
+    print("\n.cv / volatile ordering check")
+    for label, kind, fields, waits, extra in rows:
+        print(f"  {label:12} lowered to {kind:7} fields={str(fields or '-'):12} "
+              f"waits={waits} invalidate/realize ops={extra or 'none'}")
+    cv = rows[0]
+    ok = cv[1] == "buffer" and cv[2] == ["dlc", "glc"] and not cv[4]
+    print("  => .cv delivers the cache-policy bits only: no L2 invalidate, no ordering op beyond "
+          "the load wait Triton emits anyway. " + ("CONFIRMED" if ok else "UNEXPECTED"))
+    return ok and rows[1][1] == "global"
 
 
 @triton.jit
@@ -67,15 +113,12 @@ CACHE_WORDS = {"glc", "slc", "dlc"}
 
 
 def split_inst(line):
-    """Return (mnemonic, cache fields) for an ISA line, or None if it is not a memory op."""
-    m = re.match(r"\s*(buffer_(?:load|store)_\w+)\b(.*)$", line)
+    """Return (mnemonic, cache fields) for a memory-op ISA line, or None if it is not one."""
+    m = re.match(r"\s*((?:buffer|global)_(?:load|store)_\w+)\b(.*)$", line)
     if not m:
         return None
-    # Everything after the trailing immediate is addressing mode plus cache fields.
-    tail = m.group(2)
-    idx = tail.rfind(", 0")
-    fields = sorted(set(tail[idx + 3 :].split()) & CACHE_WORDS) if idx >= 0 else []
-    return m.group(1), fields
+    # The field tokens only ever appear as trailing cache modifiers on these lines.
+    return m.group(1), sorted(set(m.group(2).split()) & CACHE_WORDS)
 
 
 def in_text(asm_text, mnemonic, want):
@@ -155,6 +198,8 @@ def main():
         print(f"{op:5} {cm:5} {aux:>4} {','.join(want) or '-':14} "
               f"{th + oh:>4}/{tm + om:<5} {wcell:>16}  {'OK' if ok else 'MISMATCH'}")
 
+    if not check_cv_limitations(args.cpu):
+        failures.append(("cv", "ordering", "see the ordering check above"))
     print("\nfailures:", failures or "none")
     return 1 if failures else 0
 

@@ -551,8 +551,9 @@ getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(triton::CacheModifier cm,
 // Create the auxiliary/cache-policy value for RDNA2 (GFX10) buffer ops
 //
 // Where each aux bit lands, cross-checked against the AMD "RDNA 2" ISA Reference Guide,
-// section 13.6.1 (MTBUF field table) and against the machine words Triton's own LLVM emits
-// (test/LLVMIR/rdna2-buffer-load-cache-policy.ll pins both):
+// section 13.6.2 (MUBUF field table; the MTBUF table in 13.6.1 uses the same three positions) and
+// against the machine words Triton's own LLVM emits
+// (test/LLVMIR/rdna2-buffer-cache-policy.ll pins both):
 //   aux bit 0 = GLC -> instr bit 14
 //   aux bit 2 = DLC -> instr bit 15
 //   aux bit 1 = SLC -> instr bit 54
@@ -569,30 +570,39 @@ getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(triton::CacheModifier cm,
 //                            SLC,DLC = 1,0 -> L2 stream (hit leaves the line, does not reset age)
 //                            SLC,DLC = 1,1 -> L2 hit-no-allocate
 //   GLC for a load: the access intentionally misses L0 and is fetched from L2, invalidating a
-//   matching L0 line. GLC for a store: writes miss L0 and go through to L2 with no L0
-//   persistence across waves. L1 is already bypassed-but-coherent for stores, and L0 is always
-//   miss-evict for stores.
+//   matching L0 line. For stores GLC changes nothing about coalescing or writeback (the ISA gives
+//   the same behaviour for GLC 0 and 1, and L0 is always miss-evict for stores); L1 is already
+//   bypassed-but-coherent for stores. So a store-side effect must come from SLC/DLC alone.
 //
 // -------+-----+-----+-----+-----+-----------+-------------------------------------------------
 // Op     | cm  | GLC | SLC | DLC | aux value | RDNA2 behaviour achieved
 // -------+-----+-----+-----+-----+-----------+-------------------------------------------------
 // Load   | .ca |  0  |  0  |  0  |  0        | L0 hit, L1 hit-LRU, L2 LRU
 //        | .cg |  1  |  0  |  1  |  5        | L0 bypassed, L1 miss-evict, L2 still LRU
-//        | .cs |  0  |  1  |  1  |  6        | L1 miss-evict, L2 hit-no-allocate (streaming)
-//        | .cv |  1  |  0  |  1  |  5        | same as .cg; see caveat below
+//        | .cs |  0  |  1  |  0  |  2        | L1 hit-LRU, L2 stream
+//        | .cv |  1  |  0  |  1  |  5        | same bits as .cg; only the cache half, see below
 // -------+-----+-----+-----+-----+-----------+-------------------------------------------------
 // Store  | .wb |  0  |  0  |  0  |  0        | L2 LRU
 //        | .cg |  0  |  0  |  0  |  0        | L2 LRU; L1 is already bypassed for stores
 //        | .cs |  0  |  1  |  0  |  2        | L2 stream
-//        | .wt |  1  |  0  |  1  |  5        | L2 bypass, no L0 persistence
+//        | .wt |  0  |  0  |  1  |  4        | L2 bypass
 // -------+-----+-----+-----+-----+-----------+-------------------------------------------------
 //
-// Two caveats, both limits of the ISA rather than of this table:
-//   .cv collapses onto .cg because no load encoding can bypass L2; the part of .cv that is
-//   still missing is the system-scope ordering, which LLVM obtains with a s_waitcnt, not with
-//   an aux value (SIGfx10CacheControl::enableVolatileAndOrNonTemporal does GLC|DLC + wait).
-//   .wt becomes "L2 bypass", which is write-around rather than architecturally
-//   write-through-to-system-memory.
+// Load .cs deliberately matches LLVM's own GFX10 non-temporal load recipe (SIGfx10CacheControl::
+// enableVolatileAndOrNonTemporal sets SLC alone), so a buffer load and the !nontemporal global path
+// ask for the same policy. The stronger SLC|DLC -- L1 miss-evict plus L2 hit-no-allocate -- is a
+// different policy rather than "streaming with extra pollution control", and adopting it would
+// need a measurement behind it.
+//
+// Two rows are best-effort, and both limits are ISA facts rather than choices:
+//   .cv collapses onto .cg because no load encoding can bypass or invalidate an L2 line, and only
+//   the cache-policy half is delivered. The ordering half is NOT: LLVM's volatile handling keys off
+//   the memory operand's volatile flag, which an aux value does not set. Measured on gfx1030, a .cv
+//   buffer load emits "glc dlc" with nothing but the ordinary vmcnt wait Triton inserts for every
+//   load, and tl.load(..., volatile=True) never reaches this path (it lowers to a global_load
+//   instead). So .cv here means "do not reuse the near caches", not "volatile read".
+//   .wt becomes L2 bypass through DLC=1 alone, which is write-*around*: writes skip L2, but GFX10
+//   has no write-through-to-system-memory control for stores.
 //
 // Do not reuse this helper for buffer atomics: on GFX10 GLC is not a cache control there, it
 // selects whether the pre-op value is returned (ISA guide section 8.1.10, "Atomics").
@@ -612,7 +622,7 @@ static int32_t getCtrlBitsForCacheModifierOnRDNA2(triton::CacheModifier cm,
       aux = glc | dlc;
     break;
   case triton::CacheModifier::CS:
-    aux = isLoad ? (slc | dlc) : slc;
+    aux = slc;
     break;
   case triton::CacheModifier::CV:
     assert(isLoad);
@@ -624,7 +634,7 @@ static int32_t getCtrlBitsForCacheModifierOnRDNA2(triton::CacheModifier cm,
     break;
   case triton::CacheModifier::WT:
     assert(!isLoad);
-    aux = glc | dlc;
+    aux = dlc;
     break;
   default:
     aux = 0;

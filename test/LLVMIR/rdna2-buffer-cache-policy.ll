@@ -10,8 +10,10 @@
 ;   aux bit 2 -> dlc   (instr bit 15)
 ;   aux bits >= 3 -> dropped (the aux=16 case encodes identically to aux=0)
 ;
-; The bit numbers on the right are from the AMD "RDNA 2" ISA Reference Guide, section 13.6.1
-; (MTBUF field table); they were confirmed against llvm-objdump output for these same aux values.
+; The bit numbers on the right are from the AMD "RDNA 2" ISA Reference Guide, section 13.6.2
+; (MUBUF field table; the MTBUF table in 13.6.1 agrees); they were confirmed against llvm-objdump output
+; for these same aux values, and the words Triton emits start 0xE038, whose bits [31:26] = 111000
+; is the MUBUF encoding field (MTBUF would be 111010).
 ; The last point above is why RDNA2 must not reuse the CDNA3/CDNA4 table: CDNA's SC1 lives at
 ; bit 4, which GFX10 discards even though LLVM's pre-GFX12 validity mask admits it.
 ; Kernel names carry no cache-field substrings so the CHECK-NOTs below can only match
@@ -95,25 +97,16 @@ define amdgpu_kernel void @st_a7(<4 x float> addrspace(1)* %in, ptr addrspace(8)
   ret void
 }
 
-; The three values Triton actually emits on RDNA2 (see getCtrlBitsForCacheModifierOnRDNA2), each
-; checked to survive into a distinct instruction encoding:
-;   5 = GLC|DLC  -> .cg/.cv loads and .wt stores
-;   6 = SLC|DLC  -> .cs loads
-;   2 = SLC      -> .cs stores
+; The values Triton actually emits on RDNA2 (see getCtrlBitsForCacheModifierOnRDNA2), each checked
+; to survive into a distinct instruction encoding:
+;   5 = GLC|DLC  -> .cg and .cv loads
+;   2 = SLC      -> .cs loads and stores
+;   4 = DLC      -> .wt stores
 ; CHECK-LABEL: ld_a5:
 ; CHECK: buffer_load_dwordx4 v[0:3], off, s[0:3], 0 glc dlc
 ; CHECK-NOT: slc
 define amdgpu_kernel void @ld_a5(<4 x float> addrspace(1)* %out, ptr addrspace(8) %rsrc) {
   %v = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 0, i32 0, i32 5)
-  store <4 x float> %v, ptr addrspace(1) %out, align 16
-  ret void
-}
-
-; CHECK-LABEL: ld_a6:
-; CHECK: buffer_load_dwordx4 v[0:3], off, s[0:3], 0 slc dlc
-; CHECK-NOT: glc
-define amdgpu_kernel void @ld_a6(<4 x float> addrspace(1)* %out, ptr addrspace(8) %rsrc) {
-  %v = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 0, i32 0, i32 6)
   store <4 x float> %v, ptr addrspace(1) %out, align 16
   ret void
 }
@@ -128,11 +121,12 @@ define amdgpu_kernel void @st_a2(<4 x float> addrspace(1)* %in, ptr addrspace(8)
   ret void
 }
 
-; CHECK-LABEL: st_a5:
-; CHECK: buffer_store_dwordx4 v[0:3], off, s[0:3], 0 glc dlc
+; CHECK-LABEL: st_a4:
+; CHECK: buffer_store_dwordx4 v[0:3], off, s[0:3], 0 dlc
+; CHECK-NOT: glc
 ; CHECK-NOT: slc
-define amdgpu_kernel void @st_a5(<4 x float> addrspace(1)* %in, ptr addrspace(8) %rsrc) {
+define amdgpu_kernel void @st_a4(<4 x float> addrspace(1)* %in, ptr addrspace(8) %rsrc) {
   %v = load <4 x float>, ptr addrspace(1) %in, align 16
-  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %v, ptr addrspace(8) %rsrc, i32 0, i32 0, i32 5)
+  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %v, ptr addrspace(8) %rsrc, i32 0, i32 0, i32 4)
   ret void
 }
