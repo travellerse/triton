@@ -1,13 +1,15 @@
-"""Benchmark: e4m3 MXFP8 GEMM (scaled dot, FMA path), 64x64x128 tiles.
+"""Benchmark: e4m3 MXFP8 GEMM (scaled dot, FMA path), 64x64x128 tiles by default.
 
 Run through the admission wrapper, e.g.
   python3 docs/rdna2/admission/gpu_admission.py --tag mx-gemm --budget-mib 2048 \
       --acquire run -- env -u HSA_OVERRIDE_GFX_VERSION \
       PYTHONPATH=/home/trave/code/triton/python \
       python3 docs/rdna2/performance/rdna2_mxfp8_gemm_bench.py 10 4096 8
+
+Use --sweep to time the tile/warp/stage matrix below at the given size.
 """
+import argparse
 import statistics
-import sys
 import time
 
 import torch
@@ -17,7 +19,7 @@ import triton.language as tl
 M = N = K = 4096
 BM = BN = 64
 BK = 128
-SK = BK // 32
+STAGES = 2
 
 
 @triton.jit
@@ -40,12 +42,22 @@ def gemm(a_ptr, b_ptr, sa_ptr, sb_ptr, c_ptr, K, N,
     tl.store(c_ptr + offs_m[:, None] * N + offs_n[None, :], acc)
 
 
-def main():
-    reps = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+CONFIGS = [
+    (64, 64, 128, 8, 2),
+    (64, 64, 64, 8, 2),
+    (64, 64, 64, 8, 3),
+    (128, 64, 64, 8, 2),
+    (64, 128, 64, 8, 2),
+    (128, 128, 64, 8, 2),
+    (64, 64, 128, 8, 3),
+    (64, 64, 256, 8, 2),
+    (32, 64, 128, 4, 2),
+]
+
+
+def bench(size, warps, stages, reps):
     global M, N, K
-    if len(sys.argv) > 2:
-        M = N = K = int(sys.argv[2])
-    warps = int(sys.argv[3]) if len(sys.argv) > 3 else 4
+    M = N = K = size
     torch.manual_seed(0)
     a = torch.randint(0, 120, (M, K), dtype=torch.uint8, device="cuda")
     b = torch.randint(0, 120, (K, N), dtype=torch.uint8, device="cuda")
@@ -55,9 +67,10 @@ def main():
     grid = (M // BM, N // BN)
 
     def launch():
-        gemm[grid](a, b, sa, sb, c, K, N, BM=BM, BN=BN, BK=BK, num_warps=warps, num_stages=2)
+        gemm[grid](a, b, sa, sb, c, K, N, BM=BM, BN=BN, BK=BK,
+                   num_warps=warps, num_stages=stages)
 
-    for _ in range(8):          # compile + clock ramp
+    for _ in range(4):          # compile + clock ramp
         launch()
     torch.cuda.synchronize()
 
@@ -69,9 +82,30 @@ def main():
         times.append((time.perf_counter() - t0) * 1e3)
     med = statistics.median(times)
     tf = 2 * M * N * K / (med * 1e-3) / 1e12
-    print(f"gfx target: {torch.cuda.get_device_properties(0).gcnArchName} size={M} warps={warps} "
-          f"median={med:.3f} ms  TFLOPs={tf:.2f}  all={[round(t, 2) for t in times]}")
+    print(f"size={size} {BM}x{BN}x{BK} w{warps} s{stages}: median={med:8.3f} ms  "
+          f"TFLOPs={tf:5.2f}  all={[round(t, 2) for t in times]}", flush=True)
+
+
+def main():
+    global BM, BN, BK, STAGES
+    ap = argparse.ArgumentParser()
+    ap.add_argument("reps", type=int, nargs="?", default=10)
+    ap.add_argument("size", type=int, nargs="?", default=4096)
+    ap.add_argument("warps", type=int, nargs="?", default=8)
+    ap.add_argument("--stages", type=int, default=2)
+    ap.add_argument("--sweep", action="store_true")
+    args = ap.parse_args()
+    print("device:", torch.cuda.get_device_name(0),
+          torch.cuda.get_device_properties(0).gcnArchName, flush=True)
+    if args.sweep:
+        for bm, bn, bk, w, s in CONFIGS:
+            BM, BN, BK, STAGES = bm, bn, bk, s
+            bench(args.size, w, s, args.reps)
+    else:
+        STAGES = args.stages
+        bench(args.size, args.warps, args.stages, args.reps)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

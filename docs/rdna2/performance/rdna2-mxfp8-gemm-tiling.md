@@ -37,6 +37,29 @@ The pre-fix arm is **15.2x slower** than the post-fix arm at the same shape and 
 destabilised the GPU; the post-fix runs produced no new ring timeouts or resets (checked in the
 kernel log afterwards). Ten-launch spreads were ~1–2%, far inside the size of the effect.
 
+## Tile sweep
+
+With the tiling fix in place, the remaining choice is the tile itself. Nine combinations were
+static-checked on gfx1031 first (all <= 5.5 KB of scratch per lane, versus 16 KB for the old 1x1
+tile), then timed through the same harness at two sizes (median of 5, spread ~0.3–1%):
+
+| config (BM×BN×BK, warps, stages) | 1024³ | 4096³ |
+| --- | --- | --- |
+| 64×64×128 w8 s2 | 1.873 ms (1.15) | 101.66 ms (1.35) |
+| 64×64×64 w8 s2 | **1.708 ms (1.26)** | 101.26 ms (1.36) |
+| 64×64×64 w8 s3 | 1.868 ms (1.15) | 106.27 ms (1.29) |
+| 128×64×64 w8 s2 | 1.792 ms (1.20) | **94.99 ms (1.45)** |
+| 64×128×64 w8 s2 | 2.000 ms (1.07) | 111.24 ms (1.24) |
+| 128×128×64 w8 s2 | 2.601 ms (0.83) | 140.15 ms (0.98) |
+| 64×64×128 w8 s3 | 2.343 ms (0.92) | 110.60 ms (1.24) |
+| 64×64×256 w8 s2 | 3.219 ms (0.67) | 151.71 ms (0.91) |
+| 32×64×128 w4 s2 | 2.446 ms (0.88) | 138.99 ms (0.99) |
+
+No single tile wins both sizes: at 1024³ the 64×64×64 config is best, while at 4096³ widening M to
+128 wins by 6.6% because the loaded B tile is reused across more output rows. BK=128 and deeper
+pipelines both lose at the large size. The gap between the top two at 4096³ is far above the
+per-config repeat spread, so 128×64×64 is a real 4096³ recommendation, not a tie.
+
 ## What this is not
 
 * The TFLOPs are **effective** rates for dequantise-in-register FP8 → FMA with f32 operands, not
