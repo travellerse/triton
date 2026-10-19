@@ -99,27 +99,59 @@ def clock_ramp(seconds=8.0):
     torch.cuda.empty_cache()
 
 
+def compare(ref, got):
+    """NaN-aware exactness report.
+
+    torch.equal is the wrong primitive here: random block bytes put a NaN in the fp16 `d`
+    field (offset 224 of a Q6_K block), and NaN != NaN, so an *identical* decode reports as
+    unequal. Compare positions of NaN/Inf separately, then require exact equality on the
+    finite values.
+    """
+    rnan, gnan = torch.isnan(ref), torch.isnan(got)
+    rin, gin = torch.isinf(ref), torch.isinf(got)
+    finite = torch.isfinite(ref) & torch.isfinite(got)
+    bad_nan = bool((rnan != gnan).any())
+    bad_inf = bool((rin != gin).any())
+    sign_inf = bool(((ref[rin].signbit() != got[gin].signbit()).any())
+                    if rin.any() else False)
+    finite_mismatch = int((ref[finite] != got[finite]).sum())
+    return {"nan_positions_differ": bad_nan, "inf_positions_differ": bad_inf,
+            "inf_sign_differs": sign_inf, "finite_mismatch_count": finite_mismatch,
+            "nan_count": int(rnan.sum()),
+            "exact": not (bad_nan or bad_inf or sign_inf) and finite_mismatch == 0}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bench", action="store_true")
+    ap.add_argument("--sanitize-d", action="store_true",
+                    help="force the block's fp16 d field finite, so the comparison has no "
+                         "NaN/Inf at all and exactness is unambiguous")
     ap.add_argument("--out", default="/tmp/q21-p1/q6k.json")
     args = ap.parse_args()
 
+    def make_blocks(n):
+        b = torch.randint(0, 256, (n, Q6K_BYTES), dtype=torch.uint8)
+        if args.sanitize_d:
+            # exponent 0x7C.. is Inf/NaN in fp16; pick a normal exponent, keep random mantissa
+            hi = b[:, Q6K_BYTES - 1]
+            hi = (hi & 0x03) | 0x38
+            b[:, Q6K_BYTES - 1] = hi
+        return b.cuda()
+
     rep = {"exactness": []}
     for n in (1, 3, 5, 8, 9, 17, 64, 4097):
-        b = torch.randint(0, 256, (n, Q6K_BYTES), dtype=torch.uint8).cuda()
+        b = make_blocks(n)
         for dt in (torch.float16, torch.bfloat16):
             ref = torch_q6k(b, dt)
             got = triton_q6k(b, dt)
-            ok = bool(torch.equal(ref, got))
-            rep["exactness"].append({"n": n, "dtype": str(dt), "bitwise": ok,
-                                     "max_abs": float((ref.float() - got.float()).abs().max())})
-            print(f"n={n:6d} {str(dt):16s} bitwise={ok} max_abs={rep['exactness'][-1]['max_abs']}",
-                  flush=True)
-            if not ok:
-                bad = (ref != got)
-                idx = bad.nonzero()[0]
-                print("   first mismatch", idx.tolist(), ref[tuple(idx)].item(), got[tuple(idx)].item())
+            c = compare(ref, got)
+            rep["exactness"].append({"n": n, "dtype": str(dt), "sanitize_d": args.sanitize_d,
+                                     **c})
+            print(f"n={n:6d} {str(dt):16s} sanitize_d={args.sanitize_d} exact={c['exact']} "
+                  f"finite_mismatch={c['finite_mismatch_count']} "
+                  f"nan={c['nan_count']} nan_pos_differ={c['nan_positions_differ']} "
+                  f"inf_pos_differ={c['inf_positions_differ']}", flush=True)
 
     if args.bench and torch.cuda.is_available():
         clock_ramp()
@@ -127,7 +159,7 @@ def main():
         for label, out_f, in_f in [("q6k_gate_up", 24576, 4096), ("q6k_proj", 4096, 4096),
                                    ("q6k_down", 4096, 12288)]:
             n = (out_f * in_f) // QK_K
-            b = torch.randint(0, 256, (n, Q6K_BYTES), dtype=torch.uint8).cuda()
+            b = make_blocks(n)
             fn_t = lambda: torch_q6k(b, torch.float16)
             fn_k = lambda: triton_q6k(b, torch.float16)
             for _ in range(3):
@@ -139,15 +171,15 @@ def main():
             traffic = (n * Q6K_BYTES + n * QK_K * 2) / 1e9
             row = {"case": label, "torch_ms": round(t_ms, 3), "triton_ms": round(k_ms, 3),
                    "speedup": round(t_ms / k_ms, 2), "GBps": round(traffic / (k_ms / 1000), 1),
-                   "bitwise": bool(torch.equal(fn_t(), fn_k()))}
+                   "exact": compare(fn_t(), fn_k())["exact"]}
             rep["bench"].append(row)
             print(f"{label:14s} torch {row['torch_ms']:8.3f} -> triton {row['triton_ms']:8.3f} ms "
-                  f"x{row['speedup']:.2f} ({row['GBps']:.0f} GB/s) bitwise={row['bitwise']}", flush=True)
+                  f"x{row['speedup']:.2f} ({row['GBps']:.0f} GB/s) exact={row['exact']}", flush=True)
             del b
             torch.cuda.empty_cache()
 
     json.dump(rep, open(args.out, "w"), indent=1)
-    bad = [e for e in rep["exactness"] if not e["bitwise"]]
+    bad = [e for e in rep["exactness"] if not e["exact"]]
     print("exactness failures:", len(bad), "of", len(rep["exactness"]))
     return 1 if bad else 0
 
