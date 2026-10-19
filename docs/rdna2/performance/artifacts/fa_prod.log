@@ -1,0 +1,16 @@
+H=32 QN=5120 KN=10287 HD=128  862.9 GFLOP/call  ref_max=0.123
+W20261019 19:11:14.716836 140387124853696 HIPCachingAllocator.cpp:3935] memory allocation failed with OOM on device 0 while trying to allocate 6742343680 bytes (free: 4764729344, total: 12868124672).
+W20261019 19:11:14.763044 140387124853696 HIPCachingAllocator.cpp:3935] memory allocation failed with OOM on device 0 while trying to allocate 6742343680 bytes (free: 4957667328, total: 12868124672).
+Traceback (most recent call last):
+  File "/home/trave/code/triton/docs/rdna2/performance/rdna2_fa_prod_ab.py", line 194, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/trave/code/triton/docs/rdna2/performance/rdna2_fa_prod_ab.py", line 168, in main
+    run()
+    ~~~^^
+  File "/home/trave/code/triton/docs/rdna2/performance/rdna2_fa_prod_ab.py", line 145, in run
+    r = F.scaled_dot_product_attention(q4, k4, v4)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 6.28 GiB. GPU 0 has a total capacity of 11.98 GiB of which 4.62 GiB is free. Of the allocated memory 7.05 GiB is allocated by PyTorch, and 47.80 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792408272-206920-faprod
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11220 MiB, MemAvailable 23645 MiB
+  ! stale lock record '204334 spillab3 2500': pid 204334 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

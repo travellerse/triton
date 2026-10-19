@@ -1,0 +1,15 @@
+H=32 QN=5120 KN=10287 HD=128  862.9 GFLOP/call  ref_max=0.123  vram free=11304 MiB total=12272 MiB
+arm 0: subquad:2048   median   92.378 ms  min   91.814    9.34 TFLOPs  rel_err 1.99e-03  peak  2900.7 MiB
+arm 1: subquad:1024   median   93.668 ms  min   93.158    9.21 TFLOPs  rel_err 1.99e-03  peak  1606.7 MiB
+arm 2: 32x64x4        median  230.819 ms  min  230.214    3.74 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 3: 32x32x4        median  182.002 ms  min  181.564    4.74 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 4: 64x32x4        median  224.849 ms  min  224.728    3.84 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 5: 32x128x4       median  286.349 ms  min  285.589    3.01 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 6: 32x64x2        median  278.935 ms  min  278.605    3.09 TFLOPs  rel_err 4.97e-04  peak   312.7 MiB
+arm 7: subquad:2048   median   92.301 ms  min   91.755    9.35 TFLOPs  rel_err 1.99e-03  peak  2900.7 MiB
+
+A/A band: 92.378 vs 92.301 ms -> 0.08%
+fastest arm: 7:subquad:2048 at 92.301 ms (9.35 TFLOPs)
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792408420-210639-faprod2
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11034 MiB, MemAvailable 17513 MiB
+  ! stale lock record '206920 faprod 3000\n0': pid 206920 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
