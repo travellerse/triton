@@ -1,0 +1,177 @@
+{
+ "shapes": {
+  "BH": 32,
+  "M": 5120,
+  "N": 10287,
+  "D": 128
+ },
+ "flops": 862936104960,
+ "identity": {
+  "device": "AMD Radeon RX 6700 XT",
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "triton": "3.9.0",
+  "triton_pkg": "/home/trave/code/triton/python/triton"
+ },
+ "baseline_note": "production_call re-implements attention_sub_quad's inner loop (chunked baddbmm / in-place softmax / bmm over a strided key_t view). ComfyUI is not importable under this interpreter, so the arm is validated against the measured production figure instead of imported: 116.10 ms out-of-process vs 114.97 ms in-run in the P1 study.",
+ "baseline": {
+  "arm": "production attention_sub_quad (rocBLAS baddbmm/softmax/bmm)",
+  "samples_ms": [
+   72.545,
+   74.437,
+   74.458,
+   74.472,
+   74.645,
+   74.645,
+   75.528
+  ],
+  "median_ms": 74.472,
+  "min_ms": 72.545,
+  "max_ms": 75.528,
+  "tflops": 11.59,
+  "peak_allocated_mib": 2482.3,
+  "agrees_with_fp32_reference_max_abs": 0.00014429539442062378,
+  "repeat_median_ms": 74.304
+ },
+ "candidates": [
+  {
+   "cfg": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "num_warps": 4
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    186.503,
+    190.359,
+    190.608,
+    190.678,
+    191.56,
+    193.048,
+    196.033
+   ],
+   "median_ms": 190.678,
+   "tflops": 4.53,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.391
+  },
+  {
+   "cfg": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 128,
+    "num_warps": 4
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    419.384,
+    419.486,
+    419.804,
+    421.431,
+    424.604,
+    424.973,
+    426.566
+   ],
+   "median_ms": 421.431,
+   "tflops": 2.05,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.177
+  },
+  {
+   "cfg": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 128,
+    "num_warps": 4
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    487.342,
+    491.46,
+    495.086,
+    502.784,
+    504.835,
+    506.213,
+    507.304
+   ],
+   "median_ms": 502.784,
+   "tflops": 1.72,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.148
+  },
+  {
+   "cfg": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "num_warps": 8
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    150.486,
+    151.439,
+    151.767,
+    151.794,
+    151.922,
+    152.096,
+    152.193
+   ],
+   "median_ms": 151.794,
+   "tflops": 5.68,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.491
+  },
+  {
+   "cfg": {
+    "BLOCK_M": 256,
+    "BLOCK_N": 64,
+    "num_warps": 8
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    173.217,
+    173.588,
+    177.814,
+    178.034,
+    178.242,
+    178.479,
+    183.658
+   ],
+   "median_ms": 178.034,
+   "tflops": 4.85,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.418
+  },
+  {
+   "cfg": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "num_warps": 4
+   },
+   "even_n": false,
+   "max_abs_vs_fp32": 4.009902477264404e-05,
+   "within_baseline_error": true,
+   "samples_ms": [
+    163.131,
+    163.268,
+    163.98,
+    164.001,
+    164.094,
+    165.247,
+    166.822
+   ],
+   "median_ms": 164.001,
+   "tflops": 5.26,
+   "peak_allocated_mib": 753.5,
+   "speedup_vs_baseline": 0.454
+  }
+ ],
+ "tolerance": 0.02
+}

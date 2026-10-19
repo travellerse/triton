@@ -1,0 +1,25 @@
+prod_permute  median  102.628 ms    8.41 TFLOPs
+head_contig   median   74.283 ms   11.62 TFLOPs
+prod_plus_copy median  100.074 ms    8.62 TFLOPs
+prod_permute  median  103.521 ms    8.34 TFLOPs
+head_contig   median   74.751 ms   11.54 TFLOPs
+prod_plus_copy median   99.769 ms    8.65 TFLOPs
+prod_permute  median  103.596 ms    8.33 TFLOPs
+prod_plus_copy median   99.743 ms    8.65 TFLOPs
+USDT:2026-10-19 17:14:53 94386:94386 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-19 17:14:53 94386:94386 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-19 17:14:53 94386:94386 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-19 17:14:53 94386:94386 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-19 17:14:53 94386:94386 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-19 17:14:54 94386:94386 SyncActivityProfilerHandler.cpp:46] profiler_stop
+Traceback (most recent call last):
+  File "/home/trave/code/triton/docs/rdna2/performance/rdna2_key_layout_ab.py", line 193, in <module>
+    main()
+    ~~~~^^
+  File "/home/trave/code/triton/docs/rdna2/performance/rdna2_key_layout_ab.py", line 167, in main
+    FLOPS / (max(rep["arms"][name]["medians_ms"]) / 1000) / 1e12, 2)
+             ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: max() iterable argument is empty
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792401276-94370-p6-layout3
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10688 MiB, MemAvailable 19042 MiB
+  ! stale lock record '94147 p6-layout2 4096\n2048': pid 94147 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
