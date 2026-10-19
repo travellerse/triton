@@ -120,3 +120,21 @@ validation queue is:
   answer shows up as a detected corruption rather than a silent OOB write;
 * only then widen `supportsBufferAtomicRMW()` / `supportsBufferAtomicFMinMax()`, each in its own
   commit with its lit test.
+
+## A shortcut that looks available and is not: "just emit `llvm.atomicrmw`"
+
+The CAS loop above is emitted by Triton itself (`BufferOpsEmitter`), so the tempting fix is to stop
+hand-rolling it and let LLVM choose an instruction per target. Tested directly with the LLVM this
+Triton links (`llc -mcpu=...` on `atomicrmw and/or/xor/umin/max/add64/fadd/fmin`, both `acquire` and
+`monotonic`, `ptr addrspace(1)`):
+
+* every integer RMW except `add` becomes a **loop on gfx1030 and on gfx1100 alike**;
+* only width-native cases collapse to one instruction (`global_atomic_add_x2` /
+  `global_atomic_add_u64`);
+* yet Triton's RDNA3 output contains real `buffer_atomic_and_b32` — because it calls the buffer
+  atomic intrinsic itself, not because LLVM selected one.
+
+So LLVM's generic path is not a free lunch on either family: routing through it would give RDNA2 no
+gain and would take RDNA3's existing native atomics away. The only route to single-instruction
+integer atomics on RDNA2 remains what M1 built: widen Triton's own buffer-atomic gate. Recorded
+because the shortcut is the obvious first guess and it costs an afternoon to disprove.
