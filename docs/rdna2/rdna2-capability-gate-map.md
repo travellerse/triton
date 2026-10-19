@@ -143,7 +143,9 @@ RDNA3. Two pieces of evidence:
 The other formats tell the same story: e5m2, bf16 and the fp16×bf16 mix compile to the FMA dot on
 gfx103x (1970–2702 instructions), while plain fp16 is the one case that reaches RDNA2's packed dot —
 256 `v_dot2c_f32_f16` calls in 907 instructions. Nothing in the format set falls off the family's
-decomposition.
+decomposition, and the batched form is covered too: a 2x32x32x64 `dot_scaled` compiles on gfx1030
+(6,935 instructions, 3,356 B scratch) and gfx1100 (3,107, zero scratch), so the decomposed path is
+not 2D-only.
 
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
 gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (55,876 and 83,756 instructions for mxfp8),

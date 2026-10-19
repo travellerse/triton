@@ -55,6 +55,32 @@ def make_kernel(pack_a, pack_b, fmt_a, fmt_b, bits):
     return kern
 
 
+def make_kernel_3d(fmt_a, fmt_b):
+    """batched (3D) form: both operands carry a leading batch axis."""
+
+    @triton.jit
+    def kern(a_base, b_base, a_scale, b_scale, out,
+             B: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+             BLOCK_K: tl.constexpr, FMT_A: tl.constexpr, FMT_B: tl.constexpr):
+        ba = tl.arange(0, B)[:, None, None]
+        bm = tl.arange(0, BLOCK_M)[None, :, None]
+        bk = tl.arange(0, BLOCK_K)[None, None, :]
+        bn = tl.arange(0, BLOCK_N)[None, None, :]
+        scale_k: tl.constexpr = BLOCK_K // 32
+        skk = tl.arange(0, scale_k)[None, None, :]
+        a = tl.load(a_base + ba * (BLOCK_M * BLOCK_K) + bm * BLOCK_K + bk)
+        # rhs is (B, K, N)
+        b = tl.load(b_base + ba * (BLOCK_K * BLOCK_N)
+                    + tl.arange(0, BLOCK_K)[None, :, None] * BLOCK_N + bn)
+        sa = tl.load(a_scale + ba * (BLOCK_M * scale_k) + bm + skk)
+        sb = tl.load(b_scale + ba * (BLOCK_N * scale_k)
+                     + tl.arange(0, BLOCK_N)[None, :, None] + skk)
+        acc = tl.dot_scaled(a, sa, FMT_A, b, sb, FMT_B)
+        tl.store(out + ba * (BLOCK_M * BLOCK_N) + bm * BLOCK_N + bn, acc)
+
+    return kern
+
+
 CASES = [
     # every format the frontend accepts in dot_scaled's `allowed_formats`
     ("mxfp8", 1, 1, "e4m3", "e4m3", 8),
@@ -68,6 +94,23 @@ CASES = [
 
 INTERESTING = re.compile(r"v_mfma\w*|v_wmma\w*|v_dot4c_i32_i8|v_dot2c_f32_f16|v_dot2\w*|"
                          r"ds_read_b\d+|global_load_dword|local_read")
+
+
+def report(name, kern):
+    asm = kern.asm["amdgcn"]
+    hits = {}
+    for tok in INTERESTING.findall(asm):
+        hits[tok] = hits.get(tok, 0) + 1
+    # `vgpr_spill_count` is a metadata field in other backends; on AMD the observable markers in
+    # .amdgcn are the ScratchSize directive and the Folded Spill/Reload annotations. Looking for
+    # the former here reported "no spills" on kernels with 16 KB of scratch per lane.
+    scratch = re.search(r"; ScratchSize: (\d+)", asm)
+    spill_st = len(re.findall(r"Folded Spill", asm))
+    spill_ld = len(re.findall(r"Folded Reload", asm))
+    print(f"  {name:8} COMPILES instrs={len(asm.splitlines()):6} "
+          f"dot/lds={dict(sorted(hits.items(), key=lambda kv: -kv[1]))} "
+          f"scratch={scratch.group(1) if scratch else '?'}B "
+          f"spill_st={spill_st} spill_ld={spill_ld}")
 
 
 def run(arch, block_m, block_n, block_k, warps):
@@ -88,20 +131,24 @@ def run(arch, block_m, block_n, block_k, warps):
         except Exception as e:  # noqa: BLE001 - the message IS the finding
             print(f"  {name:8} FAILS: {' '.join(str(e).strip().split())[-240:]}")
             continue
-        asm = kern.asm["amdgcn"]
-        hits = {}
-        for tok in INTERESTING.findall(asm):
-            hits[tok] = hits.get(tok, 0) + 1
-        # `vgpr_spill_count` is a metadata field in other backends; on AMD the observable markers
-        # in .amdgcn are the ScratchSize directive and the Folded Spill/Reload annotations. Looking
-        # for the former here reported "no spills" on kernels with 16 KB of scratch per lane.
-        scratch = re.search(r"; ScratchSize: (\d+)", asm)
-        spill_st = len(re.findall(r"Folded Spill", asm))
-        spill_ld = len(re.findall(r"Folded Reload", asm))
-        print(f"  {name:8} COMPILES instrs={len(asm.splitlines()):6} "
-              f"dot/lds={dict(sorted(hits.items(), key=lambda kv: -kv[1]))} "
-              f"scratch={scratch.group(1) if scratch else '?'}B "
-              f"spill_st={spill_st} spill_ld={spill_ld}")
+        report(name, kern)
+
+    # The frontend also accepts a leading batch axis; the AMD decomposed path must not be 2D-only.
+    fn3 = make_kernel_3d("e4m3", "e4m3")
+    sig3 = {"a_base": "*u8", "b_base": "*u8", "a_scale": "*u8", "b_scale": "*u8",
+            "out": "*fp32", "B": "constexpr", "BLOCK_M": "constexpr",
+            "BLOCK_N": "constexpr", "BLOCK_K": "constexpr", "FMT_A": "constexpr",
+            "FMT_B": "constexpr"}
+    consts3 = {"B": 2, "BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k,
+               "FMT_A": "e4m3", "FMT_B": "e4m3"}
+    try:
+        kern3 = triton.compile(ASTSource(fn=fn3, signature=sig3, constexprs=consts3),
+                               target=GPUTarget("hip", arch, 32),
+                               options={"num_warps": warps, "num_stages": 1})
+    except Exception as e:  # noqa: BLE001
+        print(f"  {'3d-mxfp8':8} FAILS: {' '.join(str(e).strip().split())[-240:]}")
+    else:
+        report("3d-mxfp8", kern3)
 
 
 def main():
