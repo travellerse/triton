@@ -1,7 +1,13 @@
 # Cache modifiers are silently dropped on RDNA2 (GFX10)
 
-Status: **CONFIRMED** (static, device-free). The hardware effect of a hypothetical
-GFX10 mapping is **NOT_VERIFIED** and deliberately not guessed.
+**RESOLVED 2026-10-19** — RDNA2 now emits the pre-GFX12 `SC0/NT/SC1` values; see
+[performance/rdna2-cache-modifiers-enabled.md](file:///home/trave/code/triton/docs/rdna2/performance/rdna2-cache-modifiers-enabled.md)
+for the machine-code proof, the bitwise-identical device results, and the honest statement that no
+performance effect was measurable. This file stays as the diagnosis and as the record of why the
+RDNA3 table was the wrong one to copy.
+
+Status at diagnosis time: **CONFIRMED** (static, device-free). The hardware effect of a hypothetical
+GFX10 mapping was **NOT_VERIFIED** and deliberately not guessed at that point.
 Date: 2026-10-19. Triton `work/rdna2-gfx1031-m0` @ 2122e24efc + local commits.
 
 ## Finding
