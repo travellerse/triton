@@ -41,9 +41,9 @@ not a missing feature.
 
 | gate | ISA fact | consequence today |
 | --- | --- | --- |
-| `supportsBufferAtomicRMW()` — CDNA3/4, RDNA3/4m/4, CDNA5 | full integer set exists: `SWAP/CMPSWAP/ADD/SUB/CSUB/SMIN/UMIN/SMAX/UMAX/AND/OR/XOR/INC/DEC` (opcodes 48-61) plus 64-bit `_X2` forms | every buffer atomic falls back to the global path; the integer subset was built and pinned in an isolated worktree but never merged |
+| `supportsBufferAtomicRMW()` — CDNA3/4, RDNA3/4m/4, CDNA5 | full integer set exists: `SWAP/CMPSWAP/ADD/SUB/CSUB/SMIN/UMIN/SMAX/UMAX/AND/OR/XOR/INC/DEC` (opcodes 48-61) plus 64-bit `_X2` forms | the family predicate is still closed, but the integer subset that actually pays (`and`/`or`/`xor`/`umin`/`umax`, unmasked, provably-active lanes) now takes the buffer path through a per-op gate in `ConvertToBufferOps`; the rest of the set stays generic |
 | `supportsBufferAtomicFMinMax(f32)` — RDNA3/4m/4/CDNA5 | `BUFFER_ATOMIC_FMIN` 63, `FMAX` 64, `FCMPSWAP` 62 exist, and `_X2` variants too | f32 atomic min/max cannot use buffer atomics on RDNA2 |
-| `supportBitwidth32Elementwise()` — CDNA only | not checked against the ISA (see below) | elementwise ops are split to narrower vectors on RDNA2 |
+| `supportBitwidth32Elementwise()` — CDNA only | RDNA2's complete packed-op list is 20 `V_PK*` mnemonics and every one has a 16-bit element type (`V_PK_ADD_F16`, `V_PK_{MIN,MAX,FMA,FMAC,MUL}_F16`, `V_PK_{ADD,SUB,MAD,MIN,MAX}_{I16,U16}`, `V_PK_{LSHL,LSHR,ASHR}REV_B16`); there is no packed-f32 op at all | not a gap: `false` for RDNA2 is the ISA-correct answer, and `supportBitwidth16Elementwise()` returning `true` unconditionally for AMD is likewise correct |
 
 Counterpart: `supportsBufferAtomicFadd()` now excludes RDNA2 explicitly — there is no
 `BUFFER_ATOMIC_FADD` opcode at all — instead of inheriting `true` from the permissive fallthrough that
@@ -57,14 +57,42 @@ hint, so the atomic and cache-policy tables must stay separate).
 
 ## Not verified
 
-* `supportBitwidth32Elementwise()` — I did not find an ISA statement about which element bit-widths
-  the DPP/VALU path can process for elementwise (as opposed to memory) ops, so I am not claiming a
-  gap. It would need either the LLVM `GCNSubtarget` equivalent (`hasReduction`, `dot1instr` etc. are
-  CDNA-facing) or a measured A/B of a 32-bit-per-element vs split-vector kernel on device.
 * `supportsWaveId()` — RDNA4/CDNA5 only. I first wrote that the guide exposes `SH_ID`/`SE_ID` fields
   and checked it: those tokens appear nowhere in the document, so it gives me no basis either way.
   The question is about cost and about what a wave id means under WGP mode, not about whether some
   register exists, and it stays unclassified.
+
+## RDNA2's dot ALU is already being used — int8 dot is not a gap
+
+The guide's "Feature Changes in RDNA2 Devices" section lists the packed dot instructions RDNA2 added
+for inference: `V_DOT2_F32_F16`/`V_DOT2C_F32_F16`, `V_DOT2_I32_I16`/`V_DOT2_U32_U16`,
+`V_DOT4_I32_I8`/`V_DOT4C_I32_I8`, `V_DOT4_U32_U8`, `V_DOT8_I32_I4`/`V_DOT8_U32_U4`. Whether Triton
+uses them is answerable from emitted instructions, so the probe
+(`docs/rdna2/performance/rdna2_int_dot_probe.py`) compiles a 16x16x16 dot for one warp against an
+explicit `GPUTarget` and histograms the dot-family mnemonics in `.amdgcn`. No device, no submission.
+
+| arch | i8 -> i32 | f16 -> f32 |
+| --- | --- | --- |
+| gfx1030 / gfx1031 | `v_dot4c_i32_i8` x32 | `v_dot2c_f32_f16` x64 |
+| gfx942 | `v_dot4c_i32_i8_e32` x16 | `v_mfma_f32_16x16x16_f16` x1 |
+| gfx1100 | `v_wmma_i32_16x16x16_iu8` x1 (+2 `v_permlanex16_b32`) | `v_wmma_f32_16x16x16_f16` x1 (+4 permlane) |
+| gfx1200 | `v_wmma_i32_16x16x16_iu8` x1 (+1 permlane) | `v_wmma_f32_16x16x16_f16` x1 (+2 permlane) |
+
+Reading, with the arithmetic stated so it can be checked: 16x16x16 = 4096 MACs over 32 lanes = 128
+MACs per lane, so an ideal packed-int8 lowering issues 128/4 = 32 `dot4` and an ideal f16 lowering
+128/2 = 64 `dot2`. **RDNA2 hits both numbers exactly.** The "ideal" count is only meaningful for this
+per-lane FMA-style shape, though — CDNA and RDNA3+ hand the whole tile to one MFMA/WMMA instruction, so
+their issued counts are not comparable, which is why the table shows instructions rather than a ratio.
+
+So there is no int8/int16/f16 dot gap to close on RDNA2: the `AccelerateAMDMatmul` FMA fallback already
+reaches the ISA's best MACs-per-instruction, and the measured 15.19 TFLOPs ceiling in
+`performance/p4-dot-ceiling-rdna2.md` is a limit of tiles and memory movement, not of the instruction
+choice. The remaining opening on this list is hardware Triton cannot express at all: `V_DOT8_I32_I4`
+and `V_DOT8_U32_U4` (eight 4-bit products per instruction, directly relevant to the GGUF I4 paths) have
+no `tl.dot` operand type that reaches them, even though LLVM exposes the intrinsics
+(`llvm.amdgcn.sdot8`/`udot8`/`sudot4`, packed elements passed as `i32` plus an accumulator and a clamp
+bit). That is a frontend-and-lowering feature, not a gate to widen, and it is the one place where an
+int4 kernel could beat the dequant-then-dot4 path rather than just match it.
 
 ## What this changes about the plan
 

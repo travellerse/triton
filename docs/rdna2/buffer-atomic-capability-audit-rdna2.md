@@ -125,6 +125,33 @@ validation queue is:
 * only then widen `supportsBufferAtomicRMW()` / `supportsBufferAtomicFMinMax()`, each in its own
   commit with its lit test.
 
+## What the generic path costs each operation today (toolchain-measured, no device)
+
+`llc -mtriple=amdgcn-amd-amdhsa -mcpu=gfx1030 -filetype=asm` on plain `atomicrmw`, i.e. what Triton
+gets when the buffer path is not taken. Same result on gfx1100, so this is not an RDNA2-only quirk:
+
+| operation | emitted on gfx1030 | instructions |
+| --- | --- | --- |
+| `atomicrmw add i32` | `global_atomic_add v0, v1, s[2:3]` | 1, native |
+| `atomicrmw xchg float` | `global_atomic_swap v0, v1, s[0:1]` | 1, native |
+| `atomicrmw and i32` | `global_atomic_cmpswap` in a retry block (`%atomicrmw.start`) | loop |
+| `atomicrmw fadd float` | `global_atomic_cmpswap` in a retry block | loop |
+
+Three consequences for the gate, none of them inference:
+
+* The subset the enablement picks (`and`/`or`/`xor`/`umin`/`umax`) is precisely the CAS-expanded set,
+  and `BUFFER_ATOMIC_AND`/`OR`/`XOR`/`UMIN`/`UMAX` do exist on this part -- so the buffer path replaces
+  a compare-and-swap loop with one instruction. That is the whole claimed win; it is not a win for
+  `add` or `exch`, which are already single native instructions on the global path.
+* `fadd` CAS-expands *and* has no buffer opcode, so it is a genuine ISA limit rather than a software
+  gap; nothing in the gate can fix it.
+* Because `global_atomic_add`/`_swap` exist, `supportsBufferAtomicRMW()` staying closed for RDNA2 is
+  not "RDNA2 has no atomics" -- it is only "no fast path for the bitwise/min-max ops". Anyone reading
+  the gate as a capability statement about atomics in general would be wrong.
+
+Reproduce with the four kernels in the file this section was measured from: `atomicrmw` on
+`ptr addrspace(1)`, `acq_rel`, `align 4`, `-mcpu=gfx1030` and `-mcpu=gfx1100`.
+
 ## A shortcut that looks available and is not: "just emit `llvm.atomicrmw`"
 
 The CAS loop above is emitted by Triton itself (`BufferOpsEmitter`), so the tempting fix is to stop
