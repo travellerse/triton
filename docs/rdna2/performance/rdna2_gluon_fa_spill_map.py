@@ -7,9 +7,12 @@ it compiles for gfx1030 (docs/rdna2/gluon-can-express-rdna2-without-matrix-units
 static question is: at equal geometry AND equal math, does pinning the layouts reduce spills?
 
 Both arms are the same attention inner step -- QK^T, exp2 with a fixed softmax shift, PV -- and
-neither does row reductions, because gl.max/gl.sum along an axis do not build through the offline
-GluonASTSource path on any AMD arch (reproduced on gfx1100 as well as gfx1030). Each arm's emitted
-dot-instruction count is printed, so an unfair comparison stays visible instead of silent.
+neither carries the online softmax. That is a limitation of MY Gluon kernel, not of the target:
+gl.max/gl.sum along an axis do compile for AMD through GluonASTSource (verified on gfx1100 and
+gfx1030), but folding a row vector produced by a reduction over the score tile into the
+accumulator's layout needs conversions I have not got right yet. The Triton arm drops its
+reductions as well, so both sides do identical work -- which is why each arm's emitted dot count is
+printed.
 
 Static only: `vgpr_spill_count` says a kernel fits the register file; it says nothing about speed,
 so this selects candidates for hardware, it never ranks them.

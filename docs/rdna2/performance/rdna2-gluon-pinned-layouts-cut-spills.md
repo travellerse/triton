@@ -19,13 +19,21 @@ so the question is whether choosing the layout by hand changes register pressure
 
 ## Method and its validity checks
 
-Both arms are the same attention inner step (QK^T → `exp2(s − 8.0)` → PV, SK=1024). Neither does row
-reductions, because `gl.max`/`gl.sum` along an axis do not build through the offline `GluonASTSource`
-path on *any* AMD arch (reproduced on gfx1100 as well as gfx1030) — a frontend limitation, not an
-RDNA2 one. Every row prints each arm's emitted `v_dot*` count, and in all 20 rows the counts are
-identical, so the arms really did the same work. The comparison is only meaningful with that check:
-the first version of this tool compared a reduction-free Gluon kernel against a Triton kernel that
-*did* online softmax, and reported "Gluon better" at one tile purely because it was doing less math.
+Both arms are the same attention inner step (QK^T → `exp2(s − 8.0)` → PV, SK=1024). Neither carries
+the online softmax.
+
+**Retraction of what this file first said.** It claimed `gl.max`/`gl.sum` along an axis "do not build
+through the offline `GluonASTSource` path on any AMD arch". That was my harness bug, not a Triton
+defect: the minimal repro used plain `triton.compiler.ASTSource`, which never sets `ttg.num-warps`
+for a Gluon module. Re-run with `GluonASTSource`, reductions compile fine on both gfx1100 and
+gfx1030. The real reason the arms omit the softmax is that my Gluon kernel has not got the
+row-vector layout crossings right (a vector produced by reducing the score tile is in the score
+tile's slice layout, and mixing it into the accumulator's layout needs explicit conversions).
+
+Every row prints each arm's emitted `v_dot*` count, and in all 20 rows the counts are identical, so
+the arms really did the same work. That check exists because the *first* version of this tool
+compared a reduction-free Gluon kernel against a Triton kernel that did online softmax, and
+reported "Gluon better" at one tile purely because it was doing less math.
 
 ## Result: the pinned layout wins, but only the right one
 
@@ -50,11 +58,12 @@ for `head_dim=128` (64×64: −26% and −28%).
 ✱ Note `64×32/64/1`: both pinned variants beat auto there, so that row is not the reason for the
 conclusion.
 
-**A single arm nearly produced the opposite paper.** With one hand-picked layout the honest reading
-was "Triton's auto-layout wins 9 of 10 — Gluon layout control is not the lever". Changing
-`threads_per_warp` flips it. The finding is therefore about *layout choice*, not about Gluon per se,
-and the two arms that differ only in `[8,4]` vs `[4,8]` bracket how much that choice moves register
-pressure on this hardware.
+**One arm nearly produced the opposite paper.** With `[8,4]` only, the honest reading was "Triton's
+auto-layout wins 9 of 10 — Gluon layout control is not the lever"; changing nothing but
+`threads_per_warp` flips it to 8 of 10 the other way. So the finding is about *layout choice*, not
+about Gluon per se, and a single pinned layout is not evidence — the two variants bracket how much
+this one knob moves register pressure. (This section has since been corrected twice: first the arms
+were unequal, then the reduction "blocker" was my own repro bug.)
 
 ## The interesting consequence for Triton itself
 
@@ -73,6 +82,8 @@ result asks for are queued, not performed:
    does −28% spills become anything, given that the spill-free config was previously *slower*?
 2. A wider pinned sweep (order, `size_per_thread`, warps along the other axis) to see whether `[4,8]`
    is the best of a family or a coincidence of two probes.
-3. The reduction blocker: `gl.max`/`gl.sum` failing to build through `GluonASTSource` on AMD is worth
-   a minimal-repro issue regardless of RDNA2 — it currently makes full FA steps unwritable in Gluon
-   through the offline path on every AMD target.
+3. Finish the Gluon arm with the online softmax (explicit `convert_layout` on `m_i`/`l_i`/`alpha` at
+   the score-tile ↔ accumulator boundary) and re-run the two pinned variants. The current result is
+   for the inner step only, and the reductions are exactly the part that keeps `m_i`, `l_i`, `s` and
+   `p` live at once — the register pressure this whole line of work is about — so the −28% figure is
+   likely to move once they are in.
