@@ -113,6 +113,21 @@ def k_masked_and_i32(PTR, VAL, OUT, MASK, BLOCK: tl.constexpr):
     tl.store(OUT + offs, res, mask=m)
 
 
+@triton.jit
+def loop_and_i32(DATA, BINS, N, BLOCK: tl.constexpr):
+    """The hot form: an atomic inside a pipelined loop."""
+    offs = tl.arange(0, BLOCK)
+    for i in range(0, N, BLOCK):
+        tl.atomic_and(BINS + offs, tl.load(DATA + i + offs))
+
+
+@triton.jit
+def loop_max_i32(DATA, BINS, N, BLOCK: tl.constexpr):
+    offs = tl.arange(0, BLOCK)
+    for i in range(0, N, BLOCK):
+        tl.atomic_max(BINS + offs, tl.load(DATA + i + offs))
+
+
 CASES = [
     ("and_i32", k_and_i32, "*i32", False),
     ("or_i32", k_or_i32, "*i32", False),
@@ -148,6 +163,29 @@ def run(arch):
         glob = sorted(set(re.findall(r"\bglobal_atomic_[a-z0-9_]+", asm)))
         form = " ".join(buf) if buf else (f"{' '.join(glob) or 'no atomic'} ({cas} cmpswap)")
         print(f"  {name:14} {form}")
+
+    # The hot form, and the shape that is supposed to be refused. BLOCK=64 over 4 warps leaves half the
+    # lanes redundant (64 elements across 128 lanes), which is a free variable in the layout -- exactly
+    # the case the subset gate excludes because a redundant lane would be issued at an out-of-range
+    # offset. BLOCK>=128 with one element per lane is provably active, so it should take the buffer path.
+    print("  -- in a pipelined loop (num_stages=2) --")
+    for fn, name in [(loop_and_i32, "loop and"), (loop_max_i32, "loop max")]:
+        for block in (64, 128, 256, 1024):
+            src = ASTSource(fn=fn, signature={"DATA": "*i32", "BINS": "*i32",
+                                              "N": "i32", "BLOCK": "constexpr"},
+                             constexprs={"BLOCK": block})
+            try:
+                kern = triton.compile(src, target=GPUTarget("hip", arch, 32),
+                                      options={"num_warps": WARPS, "num_stages": 2})
+            except Exception as e:  # noqa: BLE001 - the message IS the finding
+                print(f"  {name} BLOCK={block:5} COMPILE FAILS: "
+                      f"{' '.join(str(e).split())[-130:]}")
+                continue
+            asm = kern.asm["amdgcn"]
+            buf = len(re.findall(r"\bbuffer_atomic_", asm))
+            cas = len(re.findall(r"global_atomic_cmpswap", asm))
+            verdict = "buffer" if buf and not cas else ("generic" if cas else "no atomic")
+            print(f"  {name} BLOCK={block:5} buffer_atomic={buf} cmpswap={cas} -> {verdict}")
 
 
 def main():

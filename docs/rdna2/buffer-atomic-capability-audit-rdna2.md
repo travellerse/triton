@@ -170,6 +170,20 @@ The same probe on **gfx1100** (gate-open family, control) emits `buffer_atomic_a
 case but still `global_atomic_cmpswap_b32` for signed `max`/`min` -- which is the cross-target refusal
 above, observed rather than inferred.
 
+The loop form, which is where the payoff actually lives (same probe, `num_stages=2`, signed `max` and
+`and`):
+
+| shape | gfx1030 | gfx1100 |
+| --- | --- | --- |
+| BLOCK=64 over 4 warps (64 elements across 128 lanes → redundant lanes) | `buffer_atomic=0, cmpswap=1` — generic, as designed | `buffer_atomic=1` (that family allows redundant lanes) |
+| BLOCK=128 / 256 / 1024 (one element per lane or more) | `buffer_atomic=1 / 2 / 8`, `cmpswap=0` for both `and` and signed `max` | `and`: same; `max`: `buffer_atomic=0, cmpswap=1..8` |
+
+Two things this pins that the straight-line cases did not: the atomic really is in the loop body (the
+TTGIR dump shows `tt.atomic_rmw` inside `scf.for`) and the pipeliner leaves it in the one-instruction
+form rather than degrading it, and the free-variable rule does what it claims — the half-empty layout is
+refused on RDNA2 while RDNA3, which has no such rule, takes it. The RDNA3 `max` column is the
+cross-target refusal again, now measured in a loop.
+
 Grade: pass, ROCDL, MI lowering and assembler all agree on RDNA2, and the mask gate holds at the ISA
 level. Still not proven: what a bounds-suppressed lane does, because that needs the device.
 
