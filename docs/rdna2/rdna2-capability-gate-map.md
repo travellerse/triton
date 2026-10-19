@@ -37,6 +37,16 @@ control values are CDNA's DPP encodings. RDNA2's documented cross-row broadcast 
 280/276/274/273, then `rocdl.permlanex16`, then `rocdl.readlane`), so this is a *chosen* lowering,
 not a missing feature.
 
+`getSharedMemoryBanks()` (`TargetInfo.cpp:132`) returns 64 only for CDNA4/CDNA5 and falls through to 32
+for RDNA2, which looks wrong against the guide: it says the LDS "is configured with 64 banks" and
+"128kB ... split up into 64 banks of dword-wide RAMs". The same sentence resolves it -- "These 64 banks
+are further sub-divided into two sets of 32-banks each where 32 of the banks are affiliated with a pair
+of SIMD32's, and the other 32 banks are affiliated with the other pair". The consumers
+(`ReduceOpToLLVM.cpp:504`, `ConvertLayoutOpToLLVM.cpp:137`) use the count for bank-conflict estimation of
+one wave's accesses, and a wave32 on RDNA2 is served from one 32-bank group, so 32 is the number the
+analysis wants. The default also matches what was measured on this card (wave32, 64 KiB LDS; see
+`initial-audit.md` §5.4) -- documented here because "default" and "correct" are easy to confuse.
+
 ## Real gaps (RDNA2 has the instruction, Triton refuses to use it)
 
 | gate | ISA fact | consequence today |
