@@ -76,6 +76,25 @@ Honest summary: the fix makes Triton honour what the user asked for and removes 
 it is not a performance win on this workload, and proving the hardware interpretation of each
 bit would need a counter-based test (`rocprofv3` is installed on this host) rather than timing.
 
+## Attempted follow-up: hardware counters, blocked on this host
+
+Timing could not settle the mechanism question, so I tried counters with
+[rdna2_cache_modifier_pmc.py](file:///home/trave/code/triton/docs/rdna2/performance/rdna2_cache_modifier_pmc.py)
+(one process per modifier, since the launches share a kernel name and would aggregate):
+
+* `--pmc TCP_UTCL1_REQUEST GL2C_HIT GL2C_MISS` → rocprofv3 reported `Missing:
+  [TCP_UTCL1_REQUEST]` for agent gpu-0 (gfx1031); `GL2C_HIT`/`GL2C_MISS` are collectible. So the
+  L1-bypass hypothesis cannot be tested by counting L1 requests directly with this counter set.
+* Retrying with only the collectible pair (L2 hits/misses, which should multiply if repeats stop
+  being served from L1) **hung**: after `HSA version 1.18.0 initialized` the process produced no
+  CSV and no further log for >5 minutes, and had to be stopped. No counter rows were collected,
+  for any variant.
+
+So this remains genuinely open, and the concrete next attempt is identified rather than vague:
+profile a *pre-compiled* launch (populate Triton's cache first, then run a script that only loads
+and launches the cached kernel) so rocprofv3's interception does not overlap Triton's in-process
+LLVM compilation — or use the AMD metrics API directly instead of the CLI.
+
 ## Collateral
 
 `/usr/bin/lit` over `test/Conversion/amd`, `test/TritonGPU/amd`, `test/TritonAMDGPUTransforms`:
