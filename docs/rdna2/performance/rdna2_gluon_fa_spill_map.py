@@ -210,8 +210,62 @@ def sweep_layouts(arch, configs):
     return 0
 
 
+def time_both(bm, bn, hd, warps, threads, reps=5, batch=40, ramp=8.0):
+    """Measure the pinned-vs-auto prediction on real hardware.
+
+    Same math, same tile, only the layout differs. Small kernels here are launch-latency bound,
+    so each timing bracket holds `batch` launches behind a clock ramp, and the auto arm runs twice
+    to size the A/A band -- without that a few percent is not evidence of anything.
+    """
+    import statistics
+    import time
+
+    import torch
+
+    sk = 4096
+    q = torch.randn(bm, hd, device="cuda", dtype=torch.float16)
+    k = torch.randn(sk, hd, device="cuda", dtype=torch.float16)
+    v = torch.randn(sk, hd, device="cuda", dtype=torch.float16)
+
+    def bench(fn, grid, args):
+        fn[grid](*args)
+        torch.cuda.synchronize()
+        out = []
+        for _ in range(reps):
+            t0 = time.perf_counter()
+            for _ in range(batch):
+                fn[grid](*args)
+            torch.cuda.synchronize()
+            out.append((time.perf_counter() - t0) / batch * 1e3)
+        return statistics.median(out)
+
+    def triton_run():
+        o = torch.empty(bm, hd, device="cuda", dtype=torch.float32)
+        args = (q, k, v, o, hd, sk, 0.125)
+        return bench(fa_plain, (1,), args + (bm, bn, hd)), o
+
+    def gluon_run():
+        L = gluon_layouts(bm, bn, hd, warps)
+        o = torch.empty(bm, hd, device="cuda", dtype=torch.float32)
+        args = (q, k, v, o, hd, sk, 0.125)
+        return bench(fa_gluon, (1,), args + (bm, bn, hd, *L.values())), o
+
+    t_ramp = time.perf_counter()
+    while time.perf_counter() - t_ramp < ramp:
+        triton_run()
+    auto_ms, auto_out = triton_run()
+    glu_ms, glu_out = gluon_run()
+    auto2_ms, _ = triton_run()
+    band = abs(auto2_ms - auto_ms) / auto_ms * 100
+    same = bool(torch.allclose(auto_out, glu_out, rtol=1e-2, atol=1e-2))
+    print(f"  {bm}x{bn} hd={hd} w={warps}: auto {auto_ms:.3f} ms | gluon {glu_ms:.3f} ms "
+          f"({100 * (glu_ms - auto_ms) / auto_ms:+.1f}%) | A/A {band:.2f}% | results_agree={same}")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--time", action="store_true",
+                    help="run the pinned-vs-auto A/B on the GPU (needs an admitted device)")
     ap.add_argument("--sweep-layouts", action="store_true",
                     help="best of a layout family per tile vs auto, instead of one fixed layout")
     ap.add_argument("--arch", default="gfx1030")
@@ -220,6 +274,16 @@ def main():
     args = ap.parse_args()
     global THREADS
     THREADS = [int(x) for x in args.threads.split(",")]
+
+    if args.time:
+        import torch
+        assert torch.cuda.is_available(), "--time needs a GPU and an admitted lock"
+        for bm, bn, hd, w, th in [(64, 64, 128, 2, [4, 8]), (64, 64, 128, 1, [4, 8]),
+                                  (64, 32, 128, 1, [4, 8]), (64, 64, 64, 2, [4, 8])]:
+            time_both(bm, bn, hd, w, th)
+        print("Spill-count predictions are candidates only: this card has already shown a "
+              "spill-free config running slower than a spilling one.")
+        return 0
 
     if args.sweep_layouts:
         configs = [(bm, bn, hd, w)
