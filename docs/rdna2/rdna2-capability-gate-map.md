@@ -135,28 +135,36 @@ RDNA3. Two pieces of evidence:
 
 | arch | mxfp8 | mxfp4 | mixed | dot path in `.amdgcn` |
 | --- | --- | --- | --- | --- |
-| gfx1030 / gfx1031 | 2921 instr | 2710 | 3019 | FMA (dot-family histogram empty) |
-| gfx1100 | 1532 | 1404 | 1579 | `v_wmma_f32_16x16x16_bf16` x4 |
-| gfx1200 | 1006 | 835 | 964 | `v_wmma_f32_16x16x16_bf16` x4 |
-| gfx942 | 1003 | 924 | 992 | `v_mfma_f32_32x32x8_bf16` x8 |
+| gfx1030 / gfx1031 | 3328 instr | 2710 | 3242 | FMA (dot-family histogram empty) |
+| gfx1100 | 2109 | 1404 | 1783 | `v_wmma_f32_16x16x16_bf16` x4 |
+| gfx1200 | 1227 | 835 | 1060 | `v_wmma_f32_16x16x16_bf16` x4 |
+| gfx942 | 1155 | 924 | 1060 | `v_mfma_f32_32x32x8_bf16` x8 |
 
 The other formats tell the same story: e5m2, bf16 and the fp16×bf16 mix compile to the FMA dot on
 gfx103x (1970–2702 instructions), while plain fp16 is the one case that reaches RDNA2's packed dot —
 256 `v_dot2c_f32_f16` calls in 907 instructions. Nothing in the format set falls off the family's
 decomposition, and the batched form is covered too: a 2x32x32x64 `dot_scaled` compiles on gfx1030
-(6,935 instructions, 3,356 B scratch) and gfx1100 (3,107, zero scratch), so the decomposed path is
+(7,507 instructions, 3,400 B scratch) and gfx1100 (3,925, zero scratch), so the decomposed path is
 not 2D-only.
 
+The e4m3 rows carry a NaN guard that the software path used to lack. Rebuilding 0x7F/0xFF with the
+bias multiply mapped E4M3FN's NaN encoding to a finite ±480, while the backend's plain fp8→f16
+software path maps the same byte to NaN; the upcast now selects a canonical NaN first. That costs
+80 selects and ~14% instructions on gfx103x at this tile (7% on the mixed case), and up to ~38% on
+gfx1100 where the WMMA dot leaves less room around the conversion. mxfp4 (no NaN encoding), e5m2,
+bf16 and fp16 are unchanged. Correctness is pinned by the `scaled_upcast_fp8_sw_nan` chunk in
+`test/Conversion/amd/tritongpu_to_llvm_rdna.mlir` (red when the select is removed).
+
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
-gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (55,876 and 83,756 instructions for mxfp8),
-with gfx1100 as the control (18,703 / 28,706). Three costs worth knowing before reaching for it:
-compile time is tile-sensitive (43.4 s for 64x64x128 at stages=2 vs 4.6 s for 32x32x64), the
-large-tile kernel is 5.4x the instruction count of the equivalent plain f16 dot (10,369), and
-spilling is substantial — 16,304 B of scratch per lane with 4,328 folded spill stores at 4 warps,
-7,628 B at 8 warps, versus 1,540 B for the plain f16 dot at the same tile; a 32x32x64 loop stays at
-1,212 B. `waves_per_eu` 0/1/2 did not change the scratch size. The first two numbers are partly the
-software upcast's register cost; all of them are compile-time facts and the runtime cost is
-unmeasured.
+gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (58,088 and 87,225 instructions for mxfp8),
+with gfx1100 as the control (21,703 / 33,454). Three costs worth knowing before reaching for it:
+compile time is tile-sensitive (36.6 s for 64x64x128 at stages=2 vs 3.7 s for 32x32x64), the
+large-tile kernel is 5.6x the instruction count of the equivalent plain f16 dot (10,369), and
+spilling is substantial — 16,304 B of scratch per lane with 4,349 folded spill stores at 4 warps,
+7,692 B at 8 warps, versus 1,540 B for the plain f16 dot at the same tile; a 32x32x64 loop stays at
+1,232 B. `waves_per_eu` 0/1/2 did not change the scratch size. The instruction and compile-time
+numbers are partly the software upcast's cost; all of them are compile-time facts and the runtime
+cost is unmeasured.
 
 Instruction counts are totals and not comparable across families: gfx103x executes the dot as
 per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
