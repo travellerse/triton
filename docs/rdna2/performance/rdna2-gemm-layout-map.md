@@ -50,12 +50,27 @@ The arithmetic closes exactly: −24.54 (QK^T) + 3.51 (repack) + 0.44 (PV) = −
 Softmax at 23.95 ms for 5 chunks of [32,1024,10287] fp16 is 6.75 GB of traffic = **~282 GB/s**, i.e.
 bandwidth-saturated: it cannot be improved without fusing it away.
 
-## 4. The next measured target, and an open discrepancy I am not hiding
+## 4. The isolated-vs-in-call QK^T gap: four mechanisms tested and rejected
 
-The isolated layout study measured the packed `MT128x128x8` QK^T at 24.01 ms; **in the real call the
-same tile costs 38.82 ms**. I do not yet have an explanation, so I am not claiming the difference as
-available headroom. Candidates to test: the `alpha=scale` epilogue, the per-chunk `torch.empty`
-allocation of a 675 MB buffer, and L2/Infinity-Cache state when the packed key is written by the
-repack immediately before being read. If any of those is the cause, up to ~15 ms/call (~480 ms/step)
-is addressable without touching the algorithm; that is the next experiment, and it must be measured,
-not assumed.
+The same packed `MT128x128x8` tile costs 24.0 ms in the layout study and 38.8 ms inside the real
+`attention_sub_quad`. `rdna2_qk_gap_probe.py` tested the obvious explanations with everything else
+fixed (A/A band 0.057 ms without, 0.153 ms with the production allocator config):
+
+| arm | median ms, default env | median ms, production `PYTORCH_HIP_ALLOC_CONF` |
+|---|---|---|
+| fresh 675 MB score buffer per chunk (what production does) | 25.97 | 22.98 |
+| one reused score buffer | 26.02 | 23.10 |
+| `alpha=1` (scale epilogue removed) | 25.74 | 22.88 |
+| `alpha=1` + reused buffer | 25.72 | 22.82 |
+| repack written immediately before the GEMMs | 26.55 | 23.54 |
+
+**None of them is the cause**: the spread is ≤0.83 ms against a gap of ~15 ms. Two side results worth
+keeping — the allocator config itself is worth ~11% on this GEMM chain (26.0 → 23.0 ms), and
+reusing the score buffer buys nothing, so that "optimisation" would be complexity for no gain.
+
+So the remaining difference must come from something present in the real function and absent from
+the probe. The clean next discriminator is to run the *real function* with the packed key supplied
+from outside, isolating "everything else `attention_sub_quad` does" from the GEMM chain, rather than
+inventing another microbenchmark. Until that is measured, **no headroom is claimed** here: the
+repacked call is 90.65 ms, that is the number the workload has.
+

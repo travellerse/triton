@@ -1,0 +1,67 @@
+{
+ "shapes": {
+  "H": 32,
+  "D": 128,
+  "q_tokens": 5120,
+  "k_tokens": 10287,
+  "chunk": 1024,
+  "chunks": 5
+ },
+ "qk_flops": 431468052480.0,
+ "identity": {
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "triton": "3.9.0"
+ },
+ "arms": {
+  "alloc_per_chunk": {
+   "medians_ms": [
+    25.968,
+    25.938,
+    25.995
+   ],
+   "best_median_ms": 25.938,
+   "tflops_at_best": 16.63,
+   "gain_vs_alloc_per_chunk_ms": 0.0,
+   "step_gain_ms_x32calls": 0.0
+  },
+  "alloc_reused": {
+   "medians_ms": [
+    26.019,
+    25.991
+   ],
+   "best_median_ms": 25.991,
+   "tflops_at_best": 16.6,
+   "gain_vs_alloc_per_chunk_ms": -0.053,
+   "step_gain_ms_x32calls": -1.7
+  },
+  "alpha_is_one": {
+   "medians_ms": [
+    25.743
+   ],
+   "best_median_ms": 25.743,
+   "tflops_at_best": 16.76,
+   "gain_vs_alloc_per_chunk_ms": 0.195,
+   "step_gain_ms_x32calls": 6.2
+  },
+  "alpha_is_one_reused": {
+   "medians_ms": [
+    25.724
+   ],
+   "best_median_ms": 25.724,
+   "tflops_at_best": 16.77,
+   "gain_vs_alloc_per_chunk_ms": 0.214,
+   "step_gain_ms_x32calls": 6.8
+  },
+  "repack_adjacent": {
+   "medians_ms": [
+    26.553
+   ],
+   "best_median_ms": 26.553,
+   "tflops_at_best": 16.25,
+   "gain_vs_alloc_per_chunk_ms": -0.615,
+   "step_gain_ms_x32calls": -19.7
+  }
+ },
+ "aa_band_ms": 0.05700000000000216
+}

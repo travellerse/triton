@@ -1,0 +1,13 @@
+alloc_per_chunk        median   22.978 ms  QK^T  18.78 TFLOPs
+alloc_reused           median   23.099 ms  QK^T  18.68 TFLOPs
+alpha_is_one           median   22.881 ms  QK^T  18.86 TFLOPs
+alpha_is_one_reused    median   22.817 ms  QK^T  18.91 TFLOPs
+repack_adjacent        median   23.543 ms  QK^T  18.33 TFLOPs
+alloc_per_chunk        median   23.068 ms  QK^T  18.70 TFLOPs
+alloc_reused           median   23.126 ms  QK^T  18.66 TFLOPs
+alloc_per_chunk        median   23.131 ms  QK^T  18.65 TFLOPs
+A/A band on the repeated arm: 0.153 ms
+wrote /tmp/q21-p1/qk_gap_alloc.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402156-102850-p10-qkgap-alloc
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10711 MiB, MemAvailable 18603 MiB
+  ! stale lock record '102495 p10-qkgap 4096\n2': pid 102495 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
