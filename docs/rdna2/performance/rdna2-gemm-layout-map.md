@@ -90,3 +90,25 @@ Lesson recorded for the program: on gfx1030 a strided operand can cost 2-3x, and
 the same GEMM have to be checked. Inspecting one and fixing only it left more than half the win on
 the table.
 
+
+## 5. Down projection as a view: measured negative, and the trap it exposes
+
+`linear_input_act(..., transposed=True)` still materialises the down projection's output, unlike the
+gate_up product (Q21-OPT-035). GEMM-only the view looks like a 5.9 ms win (30.53 vs 36.40 ms), but the
+consumer is the gated residual add, which then reads a strided tensor. Measured as the pair, at
+production shapes, A/A band 0.086 ms:
+
+| arm | best median |
+|---|---|
+| materialised output + gated add (production) | 36.95 ms |
+| **view output + gated add** | **35.89 ms** |
+| forward orientation `x @ W.T` + add (reference) | 167.82 ms |
+
+The win is **1.0 ms/call = 32 ms/step = 0.33%**, not 5.9 ms: roughly 4.9 ms of the copy saving is
+paid straight back by the strided reader. Outputs are bit-identical (`max_abs = 0.0`), so this is
+purely a memory-order question. **Not worth shipping** — a 0.3% gain is not payment for making every
+downstream consumer of the MLP output depend on a non-contiguous tensor, and it would be the kind of
+complexity that outlives its reason. Recorded so nobody re-derives the 5.9 ms from a GEMM-only bench.
+
+The reference row re-confirms production's existing choice independently: the forward orientation is
+**4.5x** worse for this shape, matching the 2.97 vs 13.4 TFLOPs recorded in `comfy/ops.py:1043-1047`.

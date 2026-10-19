@@ -1,0 +1,65 @@
+{
+ "shapes": {
+  "tokens": 5120,
+  "hidden": 12288,
+  "dim": 4096
+ },
+ "flops": 515396075520.0,
+ "identity": {
+  "device": "AMD Radeon RX 6700 XT",
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "alloc_conf": "garbage_collection_threshold:0.8,max_split_size_mb:512,expandable_segments:True"
+ },
+ "arms": {
+  "materialised_then_add": {
+   "medians_ms": [
+    36.945,
+    37.031,
+    36.991
+   ],
+   "best_ms": 36.945,
+   "gain_vs_materialised_pair_ms": 0.0,
+   "step_gain_ms_x32": 0.0
+  },
+  "view_then_add": {
+   "medians_ms": [
+    36.056,
+    35.888
+   ],
+   "best_ms": 35.888,
+   "gain_vs_materialised_pair_ms": 1.057,
+   "step_gain_ms_x32": 33.8
+  },
+  "forward_form_then_add": {
+   "medians_ms": [
+    167.815
+   ],
+   "best_ms": 167.815,
+   "gain_vs_materialised_pair_ms": -130.87,
+   "step_gain_ms_x32": -4187.8
+  },
+  "materialised_only": {
+   "medians_ms": [
+    36.396
+   ],
+   "best_ms": 36.396,
+   "gain_vs_materialised_pair_ms": 0.549,
+   "step_gain_ms_x32": 17.6
+  },
+  "view_only": {
+   "medians_ms": [
+    30.531
+   ],
+   "best_ms": 30.531,
+   "gain_vs_materialised_pair_ms": 6.414,
+   "step_gain_ms_x32": 205.2
+  }
+ },
+ "aa_band_ms": 0.086,
+ "correctness": {
+  "pair_view_vs_materialised_max_abs": 0.0,
+  "view_is_noncontiguous": true,
+  "materialised_is_contiguous": true
+ }
+}

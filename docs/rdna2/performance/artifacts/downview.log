@@ -1,0 +1,13 @@
+materialised_then_add    median   36.945 ms   13.95 TFLOPs
+view_then_add            median   36.056 ms   14.29 TFLOPs
+forward_form_then_add    median  167.815 ms    3.07 TFLOPs
+materialised_only        median   36.396 ms   14.16 TFLOPs
+view_only                median   30.531 ms   16.88 TFLOPs
+materialised_then_add    median   37.031 ms   13.92 TFLOPs
+view_then_add            median   35.888 ms   14.36 TFLOPs
+materialised_then_add    median   36.991 ms   13.93 TFLOPs
+A/A band: 0.086 ms | {"pair_view_vs_materialised_max_abs": 0.0, "view_is_noncontiguous": true, "materialised_is_contiguous": true}
+wrote /tmp/q21-p1/mlp_down_view.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402461-106252-p13-downview
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10996 MiB, MemAvailable 21826 MiB
+  ! stale lock record '104940 p12-both 3072\n96\n096': pid 104940 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
