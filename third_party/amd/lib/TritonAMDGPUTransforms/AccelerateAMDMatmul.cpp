@@ -809,6 +809,14 @@ public:
                                                    computeType);
     }
 
+    // 3) The fused AMD upcast applies the scale along the packed axis, which only represents
+    // K-packed fp4; a tensor packed along M or N needs the generic unpack plus a broadcast
+    // multiply, which the base implementation does.
+    bool kPack = opIdx == 0 ? dotOp.getLhsKPack() : dotOp.getRhsKPack();
+    if (!kPack)
+      return ttg::DecomposeScaledBlocked::scaleArg(rewriter, dotOp, opIdx,
+                                                   computeType);
+
     RankedTensorType vType = v.getType();
     unsigned rank = vType.getRank();
     int32_t kDim = opIdx == 0 ? rank - 1 : rank - 2;
