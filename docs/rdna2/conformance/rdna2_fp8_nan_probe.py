@@ -49,7 +49,8 @@ def dot_scaled_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out,
 
 
 @triton.jit
-def dot_scaled_mpack_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out):
+def dot_scaled_mpack_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out,
+                       BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr):
     # 32x64 * 64x32 with the lhs packed along M (two adjacent rows per byte)
     a = tl.load(a_ptr + tl.arange(0, 16)[:, None] * BK + tl.arange(0, BK)[None, :])
     b = tl.load(b_ptr + tl.arange(0, BK // 2)[:, None] * BN + tl.arange(0, BN)[None, :])
@@ -173,7 +174,8 @@ def main():
     for byte, even, odd in ((0x21, 32.0, 64.0), (0x12, 64.0, 32.0)):
         a = torch.full((BM // 2, BK), byte, dtype=torch.uint8, device="cuda")
         out = torch.empty((BM, BN), dtype=torch.float32, device="cuda")
-        dot_scaled_mpack_k[(1,)](a, b_ones, scales, sb_scales, out, num_warps=4)
+        dot_scaled_mpack_k[(1,)](a, b_ones, scales, sb_scales, out,
+                                 BM=BM, BN=BN, BK=BK, num_warps=4)
         want = torch.empty_like(out)
         want[0::2] = even
         want[1::2] = odd
