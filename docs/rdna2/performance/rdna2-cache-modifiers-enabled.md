@@ -154,6 +154,34 @@ What is now verified is the mapping; what is still unverified is whether GLC/SLC
 measurable traffic on this part, because the timing arms are within or near the 2.37% A/A band and
 the two runs disagreed in sign.
 
+## Evidence 3b — the final encodings, with a loop that can actually observe a hint
+
+The resident arm above could not observe any cache hint by construction: `REP` was a constexpr
+Python range, so the loop was fully unrolled and LLVM hoisted the loop-invariant loads to one read
+per element (the emitted kernel had 8 loads regardless of REP). It now cycles four strips with a
+*runtime* loop count, so the load address depends on the induction variable and cannot be hoisted;
+the same run also had a stale Triton cache, which produced a spurious `.cv` x1.609 that disappeared
+once the cache was fresh.
+
+With the current encodings (load `.cg`/`.cv` = 5, `.cs` = 2, store `.cs` = 2, `.wt` = 4), a fresh
+cache, a 4 KiB working set and 512 iterations (A/A band 0.44%):
+
+| arm | median | vs baseline |
+| --- | --- | --- |
+| resident re-read, no modifier | 10.50 µs | — |
+| `.cg` | 10.60 µs | ×1.010 |
+| `.cs` | 10.83 µs | ×1.031 |
+| `.cv` | 10.46 µs | ×0.996 |
+| streaming read (128 MiB) | 0.882–0.898 ms | 149.5–152.1 GB/s |
+| copy | 0.894–0.905 ms | 143.8–150.1 GB/s per direction |
+
+Numerics are bitwise identical across every arm. So the final encodings are numerically inert and
+the streaming path shows no regression, but they still do not produce a timing signal on this part:
+the ratios are at the few-percent level and do not line up with the ISA table's L1 behaviours. Note
+that `.cg` and `.cv` emit identical aux (`GLC|DLC`), so no difference between those two is expected;
+the remaining question is whether GLC/DLC change L1/L2 traffic at all, which needs counters or a
+latency-exposing access pattern, not this bandwidth-oriented loop.
+
 ## Evidence 4 — the counters route is blocked on this host, and my explanation for it was wrong
 
 I claimed the earlier rocprofv3 hang came from interception overlapping Triton's in-process LLVM

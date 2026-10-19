@@ -1,16 +1,17 @@
 """Does GFX10 actually honour the cache-policy aux bits Triton now emits for RDNA2?
 
 Context: `getCtrlBitsForCacheModifierOnTarget` used to return 0 for RDNA2, so every
-`.cg/.cs/.cv/.wt` was silently dropped. The fix routes RDNA2 to the pre-GFX12 SC0/NT/SC1
-table (aux 3 for .cg/.cs loads and .cs stores, 17 for .cv loads and .wt stores). The lit test
-proves the value reaches the intrinsic; this script answers the two questions the test cannot:
+`.cg/.cs/.cv/.wt` was silently dropped. The fix routes RDNA2 to its own table (aux 5 for `.cg` and
+`.cv` loads, 2 for `.cs` loads and stores, 4 for `.wt` stores). The lit test proves the value
+reaches the intrinsic; this script answers the two questions the test cannot:
 
 1. NUMERICS. A cache hint must never change results. Every modifier variant is compared
    against the same kernel compiled with no modifier, and against torch.
-2. HONOUR. If the hardware ignored SC0, an L1-resident re-read loop would time identically
-   with aux=0 and aux=3. If SC0 is real, `.cg` must be measurably slower on that loop, because
-   SC0 bypasses L1 and forces every access to L2. That is a deterministic signal that does not
-   need performance counters.
+2. HONOUR. If the hardware ignored the policy bits, an L1-resident re-read loop would time
+   identically with and without a hint. If they are honoured, a bypass hint must make that loop
+   measurably slower. The loop must use a runtime trip count: a constexpr Python range is fully
+   unrolled and LLVM hoists the loop-invariant loads, which makes the hint unobservable by
+   construction. That is a deterministic signal that does not need performance counters.
 
 The third case is the opposite direction: a streaming read larger than L1, where a hint should
 cost nothing (and NT should not hurt), to confirm the change is not a regression for the common
@@ -33,22 +34,26 @@ MODS = ["none", "cg", "cs", "cv"]
 
 
 @triton.jit
-def resident_read(X, Out, N: tl.constexpr, BLOCK: tl.constexpr, REP: tl.constexpr,
+def resident_read(X, Out, rep, BLOCK: tl.constexpr, STRIPS: tl.constexpr,
                   CM: tl.constexpr):
-    """Re-read the same small region REP times. With SC0 honoured, the 2nd..Nth reads can no
-    longer hit L1, which should cost time compared to the unmodified variant."""
+    """Cycle over STRIPS small strips `rep` times. The load address depends on the runtime loop
+    variable, so the loads cannot be hoisted or CSE'd: an earlier version used a constexpr trip
+    count, was fully unrolled, and LLVM folded the repeats into one load per element, which made
+    the cache hint unobservable by construction. With SC0 honoured, the repeated reads of this
+    L1-sized set must come from L2 and cost measurably more than the unmodified variant."""
     offs = tl.arange(0, BLOCK)
     acc = tl.zeros([BLOCK], tl.float32)
-    for _ in range(REP):
+    for i in range(0, rep):
+        strip = (i & (STRIPS - 1)) * BLOCK
         if CM == "none":
-            acc += tl.load(X + offs)
+            acc += tl.load(X + strip + offs)
         elif CM == "cg":
-            acc += tl.load(X + offs, cache_modifier=".cg")
+            acc += tl.load(X + strip + offs, cache_modifier=".cg")
         elif CM == "cs":
-            acc += tl.load(X + offs, cache_modifier=".cs")
+            acc += tl.load(X + strip + offs, cache_modifier=".cs")
         else:
-            acc += tl.load(X + offs, cache_modifier=".cv")
-    tl.store(Out + offs, acc / REP)
+            acc += tl.load(X + strip + offs, cache_modifier=".cv")
+    tl.store(Out + offs, acc / rep)
 
 
 @triton.jit
@@ -109,12 +114,14 @@ def main():
     # traffic is comparable to it: a copy moves bytes twice, so its summed figure must never be
     # read against this number.
     ap.add_argument("--spec-gbps", type=float, default=384.0)
-    # The resident re-read is the honour discriminator. If a near-cache bypass is real, deepening
-    # the loop should widen the gap into a multiple, not a few percent -- a run that stays at ~1%
-    # with REP in the hundreds says the bits are inert, and these knobs make that a one-command
-    # experiment (--resident-block 1024 --resident-rep 512).
-    ap.add_argument("--resident-block", type=int, default=1024)
-    ap.add_argument("--resident-rep", type=int, default=64)
+    # The resident re-read is the honour discriminator. Four strips of --resident-block elements
+    # form an L1-sized set; --resident-rep bounds the runtime loop so the loads cannot be hoisted.
+    # If a near-cache bypass is real, the repeated reads must come from L2 and the gap should be a
+    # multiple, not a few percent.
+    ap.add_argument("--resident-block", type=int, default=256,
+                    help="elements per strip; 4 strips are cycled (default 4 KiB working set)")
+    ap.add_argument("--resident-rep", type=int, default=512,
+                    help="runtime loop iterations over the strips")
     args = ap.parse_args()
 
     assert torch.cuda.is_available()
@@ -129,25 +136,26 @@ def main():
     # The arm order is none, cg, cs, cv, none again: the trailing repeat of the unmodified
     # variant sizes the noise band, without which a 7% delta is not evidence of anything.
     BLOCK, REP = args.resident_block, args.resident_rep
-    print(f"  resident arm: BLOCK={BLOCK} ({BLOCK*4/1024:.0f} KiB working set), REP={REP}",
-          flush=True)
-    x = torch.randn(BLOCK, device="cuda", dtype=torch.float32)
+    STRIPS = 4
+    print(f"  resident arm: {STRIPS} strips x BLOCK={BLOCK} "
+          f"({STRIPS*BLOCK*4/1024:.0f} KiB working set), {REP} runtime iterations", flush=True)
+    x = torch.randn(STRIPS * BLOCK, device="cuda", dtype=torch.float32)
     o = torch.zeros(BLOCK, device="cuda", dtype=torch.float32)
     ref = None
     for arm, cm in enumerate(MODS + ["none_repeat"]):
         key = "none" if cm == "none_repeat" else cm
         o.zero_()
-        resident_read[(1,)](x, o, N=BLOCK, BLOCK=BLOCK, REP=REP, CM=key, num_warps=1)
+        resident_read[(1,)](x, o, REP, BLOCK=BLOCK, STRIPS=STRIPS, CM=key, num_warps=1)
         torch.cuda.synchronize()
         if ref is None:
             ref = o.clone()
-            expect = x / 1.0
+            expect = x.reshape(STRIPS, BLOCK).mean(0)
             print(f"  numerics baseline (none) matches x: "
                   f"{torch.allclose(o, expect, rtol=1e-3, atol=1e-4)}", flush=True)
         agree = bool(torch.allclose(o, ref, rtol=1e-3, atol=1e-4))
         ms = statistics.median(timed(
-            lambda key=key: resident_read[(1,)](x, o, N=BLOCK, BLOCK=BLOCK, REP=REP, CM=key,
-                                                num_warps=1),
+            lambda key=key: resident_read[(1,)](x, o, REP, BLOCK=BLOCK, STRIPS=STRIPS,
+                                                CM=key, num_warps=1),
             args.batch, args.reps, args.ramp))
         res[f"resident_{arm}_{cm}"] = {"median_ms": ms, "matches_none": agree}
         print(f"resident re-read  {cm:11s} median {ms*1000:8.2f} us  matches_none={agree}",
