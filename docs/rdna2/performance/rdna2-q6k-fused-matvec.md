@@ -24,9 +24,11 @@ several times slower at these shapes and flattered the fused kernel, so these ar
 numbers.
 
 BN=4 instead of 8 is decisive for this format: 0.063 vs 0.176 ms at 4096² and 0.332 vs 0.924 at
-24576×4096 (2.8×), with the A/A band tightening from 3.9% to 0.43% at the largest shape. At
-~270–300 Gweight/s the kernel is close to the card's bandwidth for the 0.82 B/weight format
-(≈220–250 GB/s of weight traffic against a 384 GB/s spec).
+24576×4096 (2.8×), with the A/A band tightening from 3.9% to 0.43% at the largest shape. The small
+end is closed too: BN=2 and BN=1 are 3–6% slower (0.066/0.069 ms at 4096², 0.358/0.381 at
+24576×4096), so BN=4 is the optimum over the 1–32 range. At ~270–300 Gweight/s the kernel is close
+to the card's bandwidth for the 0.82 B/weight format (≈220–250 GB/s of weight traffic against a
+384 GB/s spec).
 
 ## Correctness
 

@@ -27,8 +27,10 @@ above is the corrected one.
 
 BN was tuned after the first pass: four rows per program is 13–25% faster than eight (0.102 vs
 0.118 ms at 4096², 0.553 vs 0.643 at 24576×4096), while BN=16 and BN=32 collapse (0.156 and
-0.736 ms at 4096²) and eight warps are slower than four at the same BN. The tuned kernel is
-bandwidth/issue limited at ~163–180 Gweight/s.
+0.736 ms at 4096²) and eight warps are slower than four at the same BN. The small end is closed
+too: BN=2 and BN=1 are 3–6% slower (0.106/0.109 ms at 4096², 0.585/0.617 at 24576×4096), so BN=4
+is the optimum over the whole 1–32 range. The tuned kernel is bandwidth/issue limited at
+~163–181 Gweight/s.
 
 ## Small-M reuse
 
