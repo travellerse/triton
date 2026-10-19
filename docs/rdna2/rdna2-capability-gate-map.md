@@ -154,7 +154,10 @@ A rows instead of 2 at 32x32x64, and it was the dominant source of the spill cou
 used to report. `TritonScaledDotPattern` now shares `TritonDotPattern`'s heuristic; the matrix-unit
 rows above are unchanged because they overwrite the encoding, while gfx103x dropped from 3328
 instructions/1112 B scratch to 2414/96 B. Pinned by the `dot_scaled_fma_layout` chunk in
-`test/Conversion/triton_to_tritongpu.mlir` (red without the pattern).
+`test/Conversion/triton_to_tritongpu.mlir` (red without the pattern). Capping the scaled tile at
+2x2 instead of reusing the plain-dot 4x4 step was measured statically and is worse — the 64x64x128
+loop goes from 32,313 to 41,811 instructions and from 4,052 to 8,092 B of scratch — so the shared
+heuristic stays.
 
 The e4m3 rows carry a NaN guard that the software path used to lack. Rebuilding 0x7F/0xFF with the
 bias multiply mapped E4M3FN's NaN encoding to a finite ±480, while the backend's plain fp8→f16
