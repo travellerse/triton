@@ -47,10 +47,27 @@ defect in the gate structure, independent of whether RDNA2 atomics ever get enab
 
 Two things must be settled with hardware, and neither is answerable statically:
 
-1. **Masked lanes.** The M1M candidate is restricted to *unmasked* accesses with no layout free
-   variables because GFX10's behaviour for a predicated-off buffer atomic (does it suppress the
-   lane, or write?) is not documented in the guide's atomic sections, and a wrong answer is a
-   silent out-of-bounds write, not a crash.
+1. **Masked lanes — now documented, with one residual.** The RDNA2 guide's "Range Checking" section
+   (8.1, Table 35 and its notes) answers the question the M1 record called undocumented:
+   "When an address is out of range, **writes are ignored (dropped)** and reads return zero", and
+   note 3 states explicitly that "Load/store-format-* instruction **and atomics** are range-checked
+   *all or nothing* — either entirely in or out". So a predicated-off lane issued as a buffer
+   atomic is dropped by hardware, provided the descriptor actually asks for a checking mode.
+
+   Triton does set that mode on RDNA/RDNA4/CDNA5: `OOB_select = 3` with `stride = 0` and
+   `numRecords = INT_MAX-1` ([BufferOpsEmitter.cpp:69-84](file:///home/trave/code/triton/third_party/amd/lib/TritonAMDGPUToLLVM/BufferOpsEmitter.cpp#L69)),
+   and mode 3 with `const_stride == 0` reduces to `offset + payload > NumRecords`. Masked lanes are
+   sent `offset = 0x80000000` ([BufferOpsEmitter.cpp:280-283](file:///home/trave/code/triton/third_party/amd/lib/TritonAMDGPUToLLVM/BufferOpsEmitter.cpp#L280)).
+
+   **The residual is arithmetic, not ISA lore.** `0x8000_0000` exceeds `numRecords = 0x7FFF_FFFE`
+   only under an *unsigned* comparison; if the hardware compares the offset as signed, that value is
+   negative, the check does not fire, and masked lanes perform real writes — which is exactly the
+   silent-corruption failure the M1 record was protecting against. The guide does not say which.
+   This is now a one-line device experiment rather than an open design question: run a masked buffer
+   atomic over a guard region whose contents are known, with the mask false, and check whether the
+   guard bytes change. Any lane written = signed comparison = the current code is already unsafe for
+   *every* masked buffer access on RDNA, atomics included, which would make this more urgent than
+   the gate. No list change should be made before that answer exists.
 2. **Return-value and cache-policy interaction.** On GFX10 the atomic's `GLC` bit selects whether
    the pre-op value is returned (ISA guide 8.1.10 "Atomics"), so the cache-policy aux path and the
    atomic path must not share a table — the RDNA2 cache helper says so explicitly, and any atomic
