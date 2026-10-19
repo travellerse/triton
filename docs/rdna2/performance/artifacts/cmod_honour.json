@@ -1,0 +1,63 @@
+{
+ "args": {
+  "reps": 7,
+  "batch": 100,
+  "ramp": 8.0,
+  "out": "/tmp/cmod_honour.json"
+ },
+ "res": {
+  "resident_none": {
+   "median_ms": 0.00978219985961914,
+   "matches_none": true
+  },
+  "resident_cg": {
+   "median_ms": 0.009905790090560912,
+   "matches_none": true
+  },
+  "resident_cs": {
+   "median_ms": 0.01047569990158081,
+   "matches_none": true
+  },
+  "resident_cv": {
+   "median_ms": 0.009944700002670288,
+   "matches_none": true
+  },
+  "stream_none": {
+   "median_ms": 0.8980708122253418,
+   "gbps": 149.45116373108718,
+   "matches_none": true
+  },
+  "stream_cg": {
+   "median_ms": 0.9095956802368164,
+   "gbps": 147.55756971609185,
+   "matches_none": true
+  },
+  "stream_cs": {
+   "median_ms": 0.9023898124694825,
+   "gbps": 148.73586353185814,
+   "matches_none": true
+  },
+  "stream_cv": {
+   "median_ms": 0.9096426963806152,
+   "gbps": 147.5499429985422,
+   "matches_none": true
+  },
+  "store_none": {
+   "median_ms": 0.9156666755676269,
+   "gbps": 293.1584856832268,
+   "matches_none": true
+  },
+  "store_cs": {
+   "median_ms": 0.8893250465393067,
+   "gbps": 301.8417810727156,
+   "matches_none": true
+  },
+  "store_wt": {
+   "median_ms": 0.9131077766418457,
+   "gbps": 293.9800348511217,
+   "matches_none": true
+  }
+ },
+ "device": "AMD Radeon RX 6700 XT",
+ "gcn": "gfx1030"
+}

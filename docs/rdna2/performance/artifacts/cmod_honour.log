@@ -1,0 +1,22 @@
+device=AMD Radeon RX 6700 XT gcn=gfx1030 L1=? L2=3145728
+  numerics baseline (none) matches x: True
+resident re-read  CM=none  median     9.78 us  matches_none=True
+resident re-read  CM=cg    median     9.91 us  matches_none=True
+resident re-read  CM=cs    median    10.48 us  matches_none=True
+resident re-read  CM=cv    median     9.94 us  matches_none=True
+streaming read    CM=none  median    0.898 ms   149.5 GB/s  bitwise=True
+streaming read    CM=cg    median    0.910 ms   147.6 GB/s  bitwise=True
+streaming read    CM=cs    median    0.902 ms   148.7 GB/s  bitwise=True
+streaming read    CM=cv    median    0.910 ms   147.5 GB/s  bitwise=True
+copy w/ store cm  CM=none  median    0.916 ms   293.2 GB/s  bitwise=True
+copy w/ store cm  CM=cs    median    0.889 ms   301.8 GB/s  bitwise=True
+copy w/ store cm  CM=wt    median    0.913 ms   294.0 GB/s  bitwise=True
+
+== resident re-read ratios vs the unmodified variant ==
+  none      9.78 us   x1.000
+  cg        9.91 us   x1.013
+  cs       10.48 us   x1.071
+  cv        9.94 us   x1.017
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792410882-226895-cmod
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10598 MiB, MemAvailable 16599 MiB
+  ! stale lock record '222894 q6kinsitu 2500': pid 222894 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
