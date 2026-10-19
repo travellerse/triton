@@ -130,3 +130,40 @@ define amdgpu_kernel void @st_a4(<4 x float> addrspace(1)* %in, ptr addrspace(8)
   call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %v, ptr addrspace(8) %rsrc, i32 0, i32 0, i32 4)
   ret void
 }
+
+; Second, separate question: does the aux operand change anything besides the cache fields?
+; tl.load(..., cache_modifier='.cv') is documented as a request for a volatile read, and the value
+; Triton emits for it (5) is the same as for '.cg'. These two kernels are the same load-store-load-
+; store sequence with aux 0 in the first and aux 5 in the second, so the only textual difference
+; allowed below is the glc/dlc field: the s_waitcnt vmcnt numbering, the order of the waits, and the
+; fact that both loads are issued before the first wait are pinned to be identical. That is the
+; machine-code form of "the cache-policy half of .cv is delivered and the ordering half is not".
+; CHECK-LABEL: seq_a0:
+; CHECK: buffer_load_dwordx4 v[0:3], off, s[0:3], 0{{$}}
+; CHECK-NEXT: buffer_load_dwordx4 v[4:7], off, s[0:3], 0 offset:128{{$}}
+; CHECK-NEXT: s_waitcnt vmcnt(1)
+; CHECK-NEXT: buffer_store_dwordx4 v[0:3], off, s[0:3], 0 offset:64{{$}}
+; CHECK-NEXT: s_waitcnt vmcnt(0)
+; CHECK-NEXT: buffer_store_dwordx4 v[4:7], off, s[0:3], 0 offset:192{{$}}
+define amdgpu_kernel void @seq_a0(ptr addrspace(8) %rsrc) {
+  %a = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 0, i32 0, i32 0)
+  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %a, ptr addrspace(8) %rsrc, i32 64, i32 0, i32 0)
+  %b = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 128, i32 0, i32 0)
+  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %b, ptr addrspace(8) %rsrc, i32 192, i32 0, i32 0)
+  ret void
+}
+
+; CHECK-LABEL: seq_a5:
+; CHECK: buffer_load_dwordx4 v[0:3], off, s[0:3], 0 glc dlc
+; CHECK-NEXT: buffer_load_dwordx4 v[4:7], off, s[0:3], 0 offset:128 glc dlc
+; CHECK-NEXT: s_waitcnt vmcnt(1)
+; CHECK-NEXT: buffer_store_dwordx4 v[0:3], off, s[0:3], 0 offset:64 glc dlc
+; CHECK-NEXT: s_waitcnt vmcnt(0)
+; CHECK-NEXT: buffer_store_dwordx4 v[4:7], off, s[0:3], 0 offset:192 glc dlc
+define amdgpu_kernel void @seq_a5(ptr addrspace(8) %rsrc) {
+  %a = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 0, i32 0, i32 5)
+  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %a, ptr addrspace(8) %rsrc, i32 64, i32 0, i32 5)
+  %b = call <4 x float> @llvm.amdgcn.raw.ptr.buffer.load.v4f32(ptr addrspace(8) %rsrc, i32 128, i32 0, i32 5)
+  call void @llvm.amdgcn.raw.ptr.buffer.store.v4f32(<4 x float> %b, ptr addrspace(8) %rsrc, i32 192, i32 0, i32 5)
+  ret void
+}
