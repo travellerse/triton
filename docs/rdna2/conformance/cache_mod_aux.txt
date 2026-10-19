@@ -1,0 +1,6 @@
+# aux (final operand) of rocdl.raw.ptr.buffer.{load,store} for test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna3.mlir
+# cases in order: load.cg load.cs load.cv store.cs store.wt, 4 accesses each
+gfx1100   aux: 1 1 1 1 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 
+gfx1150   aux: 1 1 1 1 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 
+gfx1030   aux: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
+gfx1031   aux: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
