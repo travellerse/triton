@@ -1,0 +1,19 @@
+arm 0:   64x64   hd=128  w=4  median  42.662 ms  min  42.575  rel_err 7.41e-04  peak   112.0 MiB
+arm 1:   32x64   hd=128  w=4  median  35.687 ms  min  35.642  rel_err 7.41e-04  peak   112.0 MiB
+arm 2:   32x32   hd=128  w=4  median  28.534 ms  min  28.431  rel_err 7.41e-04  peak   112.0 MiB
+arm 3:   64x64   hd=128  w=8  median  34.846 ms  min  34.831  rel_err 7.41e-04  peak   112.0 MiB
+arm 4:   32x32   hd=128  w=8  median  51.005 ms  min  50.983  rel_err 7.41e-04  peak   112.0 MiB
+arm 5:   64x64   hd=128  w=4  median  42.754 ms  min  42.688  rel_err 7.41e-04  peak   112.0 MiB
+
+A/A band (arm 0 repeated last): 42.662 vs 42.754 ms -> 0.22% spread
+
+== ratios vs first arm ==
+  0:64x64x128w4           42.662 ms  x1.000
+  1:32x64x128w4           35.687 ms  x1.195
+  2:32x32x128w4           28.534 ms  x1.495
+  3:64x64x128w8           34.846 ms  x1.224
+  4:32x32x128w8           51.005 ms  x0.836
+  5:64x64x128w4           42.754 ms  x0.998
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792407926-204334-spillab3
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11292 MiB, MemAvailable 23163 MiB
+  ! stale lock record '203900 spillab2 2500': pid 203900 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
