@@ -99,3 +99,25 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.thr
     tt.return %0 : tensor<16x16xf32, #blocked>
   }
 }
+
+// -----
+
+#scaled = #ttg.blocked<{sizePerThread = [1, 1], threadsPerWarp = [1, 32], warpsPerCTA = [1, 4], order = [1, 0]}>
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.threads-per-warp" = 32 : i32} {
+  // E4M3FN encodes NaN as 0x7F (and 0xFF with the sign set), but the software upcast's bias
+  // multiply would turn those patterns into finite +/-480. The lowering must select a NaN first:
+  // the plain fp8->f16 software path in this backend already does it
+  // (Fp8E4M3fnToFp16OneValue selects 0x7E00 for the same byte), so the scaled path must not turn
+  // the encoding into a number.
+  // All four RUN lines take the software path (neither RDNA2 nor RDNA3 has a hardware scaled
+  // upcast), hence one shared CHECK.
+  // CHECK-LABEL: scaled_upcast_fp8_sw_nan
+  // CHECK: %[[ABS:.+]] = llvm.and %{{.+}}, %{{.+}} : i8
+  // CHECK: %[[ISNAN:.+]] = llvm.icmp "eq" %[[ABS]], %{{.+}} : i8
+  // CHECK: llvm.select %[[ISNAN]], %{{.+}}, %{{.+}} : i1, f32
+  tt.func @scaled_upcast_fp8_sw_nan(%in: tensor<32x128xf8E4M3FN, #scaled>, %scale: tensor<32x128xbf16, #scaled>, %out: tensor<32x128x!tt.ptr<bf16>, #scaled>) {
+    %0 = amdg.scaled_upcast_fp8 %in scale %scale : tensor<32x128xf8E4M3FN, #scaled>, tensor<32x128xbf16, #scaled> -> tensor<32x128xbf16, #scaled>
+    tt.store %out, %0 : tensor<32x128x!tt.ptr<bf16>, #scaled>
+    tt.return
+  }
+}
