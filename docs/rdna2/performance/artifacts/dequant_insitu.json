@@ -1,0 +1,94 @@
+{
+ "identity": {
+  "device": "AMD Radeon RX 6700 XT",
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "plugin_head": "ee4e50a"
+ },
+ "arms": {
+  "gate_up": {
+   "shape": [
+    24576,
+    4096
+   ],
+   "off_best_ms": 10.867,
+   "on_best_ms": 1.444,
+   "off_all": [
+    10.867,
+    10.886,
+    10.998
+   ],
+   "on_all": [
+    1.472,
+    1.444
+   ],
+   "aa_band_ms": 0.131,
+   "speedup": 7.53,
+   "peak_off_mib": 788.0,
+   "peak_on_mib": 290.0,
+   "shape_matches": true,
+   "bitwise_equal": true,
+   "dtype_matches": true,
+   "stats": {
+    "applied": 19,
+    "fell_back": 0
+   }
+  },
+  "down": {
+   "shape": [
+    4096,
+    12288
+   ],
+   "off_best_ms": 5.52,
+   "on_best_ms": 0.695,
+   "off_all": [
+    5.696,
+    5.663,
+    5.52
+   ],
+   "on_all": [
+    0.711,
+    0.695
+   ],
+   "aa_band_ms": 0.176,
+   "speedup": 7.94,
+   "peak_off_mib": 411.0,
+   "peak_on_mib": 162.0,
+   "shape_matches": true,
+   "bitwise_equal": true,
+   "dtype_matches": true,
+   "stats": {
+    "applied": 38,
+    "fell_back": 0
+   }
+  },
+  "q_proj": {
+   "shape": [
+    4096,
+    4096
+   ],
+   "off_best_ms": 1.635,
+   "on_best_ms": 0.117,
+   "off_all": [
+    1.771,
+    1.635,
+    1.674
+   ],
+   "on_all": [
+    0.117,
+    0.12
+   ],
+   "aa_band_ms": 0.136,
+   "speedup": 13.97,
+   "peak_off_mib": 159.0,
+   "peak_on_mib": 76.0,
+   "shape_matches": true,
+   "bitwise_equal": true,
+   "dtype_matches": true,
+   "stats": {
+    "applied": 57,
+    "fell_back": 0
+   }
+  }
+ }
+}

@@ -1,0 +1,8 @@
+gate_up  off   10.867 ms -> on    1.444 ms x7.53 | A/A 0.131 ms | peak 788 -> 290 MiB | bitwise=True shape=True stats={'applied': 19, 'fell_back': 0}
+down     off    5.520 ms -> on    0.695 ms x7.94 | A/A 0.176 ms | peak 411 -> 162 MiB | bitwise=True shape=True stats={'applied': 38, 'fell_back': 0}
+q_proj   off    1.635 ms -> on    0.117 ms x13.97 | A/A 0.136 ms | peak 159 -> 76 MiB | bitwise=True shape=True stats={'applied': 57, 'fell_back': 0}
+wrote /tmp/q21-p1/dequant_insitu.json
+integrated-path exactness failures: none
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792403203-128055-p17-deq-insitu
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 10255 MiB, MemAvailable 16323 MiB
+  ! stale lock record '121515 p16-q5k-bench 3072': pid 121515 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)
