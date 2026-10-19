@@ -1,7 +1,9 @@
 # RDNA2 fast attention is register-bound, not LDS-bound
 
-Status: **CONFIRMED** statically (emitted `amdhsa` metadata + pass source). Runtime cost of
-the spills is **NOT_VERIFIED** (device refused at the time of this work).
+Status: **CONFIRMED** statically (emitted `amdhsa` metadata + pass source). The runtime cost
+was subsequently **MEASURED** on device -- see
+[rdna2-spill-cost-measured.md](file:///home/trave/code/triton/docs/rdna2/performance/rdna2-spill-cost-measured.md),
+whose Result-1 correction to this file's recommendation is applied below.
 Date: 2026-10-19. Triton `work/rdna2-gfx1031-m0`, `triton-opt`/`libtriton` built from this tree.
 Harness: [rdna2_dot_spill_map.py](file:///home/trave/code/triton/docs/rdna2/performance/rdna2_dot_spill_map.py),
 [rdna2_inthread_transpose_probe.py](file:///home/trave/code/triton/docs/rdna2/performance/rdna2_inthread_transpose_probe.py),
@@ -98,13 +100,31 @@ Caveats, stated as such:
 1. **Design constraint, not a tuning knob:** an RDNA2 flash-attention kernel must be built
    to a VGPR budget. Candidate configs that are provably spill-free from this table:
    `BM=BN=32, D=64, num_warps=4` and `BM=BN=64, D=64, num_warps=8`; for D=128 the only
-   spill-free shape found is `32×32` at 4-8 warps.2. **The structural fix is operand-stationary FMA**, i.e. consuming one dot operand straight
+   spill-free shape found is `32×32` at 4-8 warps.
+   **Correction after measurement** (see
+   [rdna2-spill-cost-measured.md](file:///home/trave/code/triton/docs/rdna2/performance/rdna2-spill-cost-measured.md)):
+   the spill-free points are *not* the fastest ones. `32×32, D=128, num_warps=8` has 0 spills
+   and runs 17% **slower** than the 947-spill `64×64/w4` baseline, and at `D=64` it is 1.81×
+   slower than the 9-spill `w4` arm. The measured rule is "minimize spills subject to keeping
+   enough per-lane work", which lands on `32×32 × num_warps=4` (222 spills, 1.495× faster than
+   baseline, 4.82 TFLOPs = 81% of the PV-shaped ceiling).2. **The structural fix is operand-stationary FMA**, i.e. consuming one dot operand straight
    from LDS (or in a narrower `kWidth`) instead of materializing both operand tiles in
    registers. `kWidth = 4` for the blocked parent is where to start looking — RDNA3's WMMA
    operand uses `[4, 8]` sizePerThread while RDNA2's FMA dot picked `[4, 4]`.
-3. **Spill cost arbitration needs the device:** run the same dot at (64,64,128,W4) vs
-   (32,32,128,W4) — the second is spill-free, and if it wins, that settles that RDNA2
-   attention should be written small rather than trying to be clever about the LDS side.
-4. This supersedes the LDS-vectorization hypothesis as the target for RDNA2 fast attention:
+3. **`num_stages` is not a lever** (checked statically, same timed kernel, `gfx1030`):
+
+   | config | stages 1 | 2 | 3 | 4 |
+   | --- | --- | --- | --- | --- |
+   | 64×64, D=128, W=4 | 947 | 846 | 845 | 1794 |
+   | 64×64, D=64, W=4 | 395 | 413 | 568 | 723 |
+   | 32×32, D=128, W=4 | 222 | 223 | 441 | 440 |
+
+   Pipelining never removes the spills; deeper pipelines add live buffers and make them
+   worse. `next_free_vgpr` stays pinned at 256 in every row. So the pressure comes from the
+   tile itself, not from scheduling.
+4. **Spill cost arbitration — done.** Two admitted runs compared `64×64/D=128/w4` against
+   lower-spill tiles; the result, including the finding that the spill-free point is a
+   regression, is in `rdna2-spill-cost-measured.md`.
+5. This supersedes the LDS-vectorization hypothesis as the target for RDNA2 fast attention:
    reads and writes are already `b128` here (P5 restored the vec-128 tile, which is what
    made `ds_read_b128`/`ds_write_b128` possible).
