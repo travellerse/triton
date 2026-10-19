@@ -89,16 +89,20 @@ def main():
     record("descriptor copy in-bounds", bool(torch.equal(out[:BM, :BN], in_guard[:BM, :BN]))
            and guard_ok(out))
 
-    # 2) load past the shape pads with zeros; the padded block is stored in-bounds for inspection
+    # 2) load past the shape pads with zeros; the padded block is stored in-bounds for inspection.
+    # Only the 32x32 stored block is checked: columns past BN in `out` are the outer sentinel.
     out = fresh_out()
     launch(in_guard, out, 20, 30, 2)
     rows_valid, cols_valid = M - 20, N - 30        # 20 x 18 real elements
-    ok = bool(torch.equal(out[:rows_valid, :cols_valid], in_guard[20:M, 30:N]))
-    ok = ok and bool((out[rows_valid:, :] == 0).all())
-    ok = ok and bool((out[:rows_valid, cols_valid:] == 0).all())
+    valid_ref = in_guard[20:M, 30:N]
+    valid_got = out[:rows_valid, :cols_valid]
+    mism = (valid_got != valid_ref).nonzero()
+    ok = bool(mism.numel() == 0)
+    ok = ok and bool((out[rows_valid:BM, :BN] == 0).all())
+    ok = ok and bool((out[:BM, cols_valid:BN] == 0).all())
     ok = ok and guard_ok(out)
     record("descriptor load past the shape pads zeros", ok,
-           f"valid={rows_valid}x{cols_valid}")
+           f"valid={rows_valid}x{cols_valid} first_mismatch={mism[:3].tolist()}")
 
     # 3) a store past the shape must drop out-of-range elements, not write the guard
     out = fresh_out()

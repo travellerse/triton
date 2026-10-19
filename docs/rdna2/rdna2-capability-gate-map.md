@@ -198,6 +198,18 @@ Limits: this section is about compilation and one GEMM shape. Numerics are measu
 every format, including the packed-along-M/N shapes, and the GEMM performance is measured from 1024³
 to 4096³; neither is a claim about the user's workload.
 
+## Tensor descriptors work through the decomposed ABI
+
+RDNA2 has no TDM, so `tl.make_tensor_descriptor` takes the DECOMPOSED path: the generic
+`RewriteTensorDescriptorToPointer` rewrite turns descriptor loads into masked loads with the padding
+value and stores into masked stores. The new runtime probe
+([rdna2_tensor_descriptor_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_tensor_descriptor_probe.py))
+checks an in-bounds copy, a load that runs past the shape (zero padding), and a store that runs past
+the shape (bounds-checked, with an 8-element right margin and 8 guard rows as sentinels). All three
+pass on gfx1031. The first version of the probe asserted zeros over sentinel columns outside the
+32-wide stored block and reported a false failure; the checks now stay inside the block — a guard
+test has to distinguish padding inside the block from untouched memory outside it.
+
 ## Cross-family gap that is not RDNA2's alone: `eviction_policy` is dropped
 
 `tl.load(..., eviction_policy='evict_first'|'evict_last')` reaches Triton IR on the op (the TTGIR shows
