@@ -735,6 +735,8 @@ int32_t getCtrlBitsForCacheModifierOnTarget(
   case ISAFamily::CDNA5:
     return getCtrlBitsForCacheModifierOn_GFX12(cm, isLoad, /*$ bypass*/ true);
   default:
+    // GFX10 (RDNA1/RDNA2) has no mapping, so every qualifier lowers to aux = 0 and the
+    // hint is dropped. amd-buffer-cache-modifiers-rdna2.mlir pins that.
     return getDefaultCtrlBitsForCacheModifier(cm);
   }
 }
