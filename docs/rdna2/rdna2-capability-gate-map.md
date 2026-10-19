@@ -97,12 +97,15 @@ their issued counts are not comparable, which is why the table shows instruction
 So there is no int8/int16/f16 dot gap to close on RDNA2: the `AccelerateAMDMatmul` FMA fallback already
 reaches the ISA's best MACs-per-instruction, and the measured 15.19 TFLOPs ceiling in
 `performance/p4-dot-ceiling-rdna2.md` is a limit of tiles and memory movement, not of the instruction
-choice. The remaining opening on this list is hardware Triton cannot express at all: `V_DOT8_I32_I4`
-and `V_DOT8_U32_U4` (eight 4-bit products per instruction, directly relevant to the GGUF I4 paths) have
-no `tl.dot` operand type that reaches them, even though LLVM exposes the intrinsics
-(`llvm.amdgcn.sdot8`/`udot8`/`sudot4`, packed elements passed as `i32` plus an accumulator and a clamp
-bit). That is a frontend-and-lowering feature, not a gate to widen, and it is the one place where an
-int4 kernel could beat the dequant-then-dot4 path rather than just match it.
+choice. The remaining opening on this list is `V_DOT8_I32_I4`/`V_DOT8_U32_U4` (eight 4-bit products
+per instruction, directly relevant to the GGUF I4 paths). `tl.dot` has no int4 operand type that
+reaches them, but "Triton cannot express them at all" was too strong: the instruction is reachable
+today through `tl.inline_asm_elementwise` (three VGPR operands). The new probe
+(`performance/rdna2_int4_dot8_probe.py`) checks signed-int4 values exactly and, at the same
+dot-instruction count, measures **75.2 GMAC/s for `v_dot8` versus 38.0 for `v_dot4`** on gfx1031 —
+the expected 2x from eight products per instruction. What is still missing is a first-class
+`tl.dot`/Gluon int4 path (packing, layout, accumulator integration), not the hardware or an
+instruction-selection gate; an int4 kernel is the remaining work.
 
 ## `tl.dot_scaled` aborted the process on RDNA2 — closed by decomposition
 
