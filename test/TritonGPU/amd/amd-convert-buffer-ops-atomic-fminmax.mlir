@@ -1,5 +1,10 @@
 // RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx942" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64
 // RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx950" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64
+// RDNA2 stays generic for both types: gfx103x does encode buffer_atomic_fmin/fmax, but
+// ConvertToBufferOps registers the RMW rewrite only under supportsBufferAtomicRMW(),
+// which excludes RDNA2 (pinned by amd-convert-buffer-ops-atomic-rmw.mlir).
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1030" | FileCheck %s --check-prefixes=CHECK,NO-F32,NO-F64
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1031" | FileCheck %s --check-prefixes=CHECK,NO-F32,NO-F64
 // RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1100" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
 // RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1170" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
 // RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1200" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
