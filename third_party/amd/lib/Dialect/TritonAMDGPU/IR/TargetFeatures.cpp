@@ -103,6 +103,10 @@ ISAFamily computeISAFamily(StringRef arch) {
     return ISAFamily::RDNA4m;
   if (major == 11)
     return ISAFamily::RDNA3;
+  // The last digit is a stepping within the GFX10.3 ISA, so gfx1030 through
+  // gfx1036 all belong to RDNA2.
+  if (major == 10 && minor == 3)
+    return ISAFamily::RDNA2;
 
   return ISAFamily::Unknown;
 }
@@ -391,6 +395,7 @@ bool isCDNA(ISAFamily isaFamily) {
 
 bool isRDNA(ISAFamily isaFamily) {
   switch (isaFamily) {
+  case ISAFamily::RDNA2:
   case ISAFamily::RDNA3:
   case ISAFamily::RDNA4m:
   case ISAFamily::RDNA4:
