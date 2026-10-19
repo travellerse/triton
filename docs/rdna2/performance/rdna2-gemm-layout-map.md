@@ -50,27 +50,43 @@ The arithmetic closes exactly: −24.54 (QK^T) + 3.51 (repack) + 0.44 (PV) = −
 Softmax at 23.95 ms for 5 chunks of [32,1024,10287] fp16 is 6.75 GB of traffic = **~282 GB/s**, i.e.
 bandwidth-saturated: it cannot be improved without fusing it away.
 
-## 4. The isolated-vs-in-call QK^T gap: four mechanisms tested and rejected
+## 4. The isolated-vs-in-call QK^T gap: resolved, and it was a second operand
 
-The same packed `MT128x128x8` tile costs 24.0 ms in the layout study and 38.8 ms inside the real
-`attention_sub_quad`. `rdna2_qk_gap_probe.py` tested the obvious explanations with everything else
-fixed (A/A band 0.057 ms without, 0.153 ms with the production allocator config):
+Four mechanisms were tested first and all rejected (A/A band 0.057-0.153 ms): per-chunk 675 MB
+allocation, the `alpha` scale epilogue, reusing the score buffer, and repack-then-read adjacency.
+None moved the number. Reusing the score buffer in particular buys nothing, so it must not be added
+as complexity.
 
-| arm | median ms, default env | median ms, production `PYTORCH_HIP_ALLOC_CONF` |
+The cause was the **query** operand. With `batch=1` every q/k/v "reshape" in `attention_sub_quad` is
+a view, so `query` reaches `baddbmm` head-interleaved as strides `(dim_head, tokens*dim_head, 1)`.
+`rdna2_qk_query_layout.py` (production `PYTORCH_HIP_ALLOC_CONF`, A/A band 0.196 ms):
+
+| QK^T arm | ms | TFLOPs |
 |---|---|---|
-| fresh 675 MB score buffer per chunk (what production does) | 25.97 | 22.98 |
-| one reused score buffer | 26.02 | 23.10 |
-| `alpha=1` (scale epilogue removed) | 25.74 | 22.88 |
-| `alpha=1` + reused buffer | 25.72 | 22.82 |
-| repack written immediately before the GEMMs | 26.55 | 23.54 |
+| strided query, strided key (production before any repack) | 68.09 | 6.34 |
+| strided query, **packed** key (the repack as first shipped) | 37.94 | 11.37 |
+| **contiguous** query, packed key | 23.08 | 18.69 |
+| strided query, packed key, query made contiguous inside | 24.30 | 17.75 |
 
-**None of them is the cause**: the spread is ≤0.83 ms against a gap of ~15 ms. Two side results worth
-keeping — the allocator config itself is worth ~11% on this GEMM chain (26.0 → 23.0 ms), and
-reusing the score buffer buys nothing, so that "optimisation" would be complexity for no gain.
+The third row explains the earlier 24.0 ms "isolated" measurement: the probe had built a contiguous
+query outside the timed region without intending to. The second row reproduces the 38.8 ms seen
+in-call, and the fourth shows the fix costs ~1 ms of copy.
 
-So the remaining difference must come from something present in the real function and absent from
-the probe. The clean next discriminator is to run the *real function* with the packed key supplied
-from outside, isolating "everything else `attention_sub_quad` does" from the GEMM chain, rather than
-inventing another microbenchmark. Until that is measured, **no headroom is claimed** here: the
-repacked call is 90.65 ms, that is the number the workload has.
+**Combined candidate, re-measured inside the real `attention_sub_quad`** (7 samples/arm, baseline
+arm run three times, A/A band 0.514 ms):
+
+| arm | medians | TFLOPs | peak |
+|---|---|---|---|
+| flag off (x3) | 110.993 / 111.296 / 111.507 ms | 7.74-7.77 | 1551-1631 MiB |
+| key repack + contiguous query (x2) | **78.476 / 78.522 ms** | 10.99-11.00 | 1711-1751 MiB |
+
+**1.417x on the attention call**, worst-case ordering still −33.0 ms, projecting to
+**~1053 ms/step ≈ 10.9%** of the 9616.8 ms step; output unchanged at 6.1e-05 vs baseline. PV is
+already at 18.4 TFLOPs so the value operand needs no treatment, and softmax remains
+bandwidth-saturated at ~282 GB/s — after these two fixes the attention call is roughly
+QK^T 24 + PV 23.5 + softmax 24, i.e. three kernels each near what this card can do for that shape.
+
+Lesson recorded for the program: on gfx1030 a strided operand can cost 2-3x, and **both** operands of
+the same GEMM have to be checked. Inspecting one and fixing only it left more than half the win on
+the table.
 

@@ -1,0 +1,28 @@
+off  median  110.993 ms    7.77 TFLOPs  peak 1551 MiB
+on   median   78.476 ms   11.00 TFLOPs  peak 1711 MiB
+off  median  111.296 ms    7.75 TFLOPs  peak 1631 MiB
+on   median   78.522 ms   10.99 TFLOPs  peak 1751 MiB
+off  median  111.507 ms    7.74 TFLOPs  peak 1631 MiB
+{
+ "baseline_medians_ms": [
+  110.993,
+  111.296,
+  111.507
+ ],
+ "candidate_medians_ms": [
+  78.476,
+  78.522
+ ],
+ "aa_band_ms": 0.514,
+ "best_case_delta_ms": -33.031,
+ "median_delta_ms": -32.766,
+ "speedup": 1.4174,
+ "step_saved_ms": 32.766,
+ "step_pct": 10.9,
+ "output_max_abs_on_vs_off": 6.103515625e-05,
+ "outputs_bitwise_equal": false
+}
+wrote /tmp/q21-p1/repack_prod_both.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402317-104940-p12-both
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11057 MiB, MemAvailable 21778 MiB
+  ! stale lock record '104479 p11-qlayout 4096\n096': pid 104479 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

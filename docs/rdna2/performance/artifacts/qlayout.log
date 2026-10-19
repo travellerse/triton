@@ -1,0 +1,15 @@
+query strides   strided: (128, 4096, 1)  contiguous: (655360, 128, 1) | strided is view: True
+key   strides strided: (128, 1, 4096)    packed: (1316736, 10287, 1)
+q_strided_key_packed              median   37.938 ms   11.37 TFLOPs
+q_contig_key_packed               median   23.225 ms   18.58 TFLOPs
+q_strided_key_strided             median   68.094 ms    6.34 TFLOPs
+q_contig_key_strided              median   59.977 ms    7.19 TFLOPs
+q_strided_plus_copy_key_packed    median   24.302 ms   17.75 TFLOPs
+q_strided_key_packed              median   38.030 ms   11.35 TFLOPs
+q_contig_key_packed               median   23.083 ms   18.69 TFLOPs
+q_strided_key_packed              median   38.134 ms   11.31 TFLOPs
+A/A band: 0.196 ms
+wrote /tmp/q21-p1/qk_query_layout.json
+state=EXCLUSIVE_COOPERATIVE_LOCK admitted=True experiment=1792402281-104479-p11-qlayout
+  - eligible to take the cooperative mutex on /tmp/qwen21-vram/.gpu_lock; cooperative scope only (uncoordinated programs can still submit work); free VRAM 11068 MiB, MemAvailable 21812 MiB
+  ! stale lock record '102850 p10-qkgap-alloc 4096': pid 102850 is gone and no fd holder exists, which gpulock.sh's own semantics allow (release = fd close)

@@ -1,0 +1,138 @@
+{
+ "shapes": {
+  "B": 1,
+  "heads": 32,
+  "dim_head": 128,
+  "q_tokens": 5120,
+  "k_tokens": 10287,
+  "query_chunk_size": 1024,
+  "mask": null
+ },
+ "flops": 862936104960,
+ "step_calls": 32,
+ "step_ms_reference": 9616.8,
+ "identity": {
+  "device": "AMD Radeon RX 6700 XT",
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "triton": "2.13.0+rocm7.2",
+  "production_binding": "attention_sub_quad",
+  "comfy_head": "47898c84591f7f1ef4e09ae3c9cd11022ff79531"
+ },
+ "arms": [
+  {
+   "arm": "off",
+   "flag": false,
+   "samples_ms": [
+    110.691,
+    110.856,
+    110.982,
+    110.993,
+    111.003,
+    111.041,
+    113.283
+   ],
+   "median_ms": 110.993,
+   "peak_allocated_mib": 1550.6,
+   "repack_stats": {
+    "applied": 0,
+    "skipped": 0
+   }
+  },
+  {
+   "arm": "on",
+   "flag": true,
+   "samples_ms": [
+    77.213,
+    78.446,
+    78.448,
+    78.476,
+    78.513,
+    78.519,
+    78.752
+   ],
+   "median_ms": 78.476,
+   "peak_allocated_mib": 1711.0,
+   "repack_stats": {
+    "applied": 10,
+    "skipped": 0
+   }
+  },
+  {
+   "arm": "off",
+   "flag": false,
+   "samples_ms": [
+    110.914,
+    111.031,
+    111.278,
+    111.296,
+    111.491,
+    111.62,
+    111.634
+   ],
+   "median_ms": 111.296,
+   "peak_allocated_mib": 1630.6,
+   "repack_stats": {
+    "applied": 10,
+    "skipped": 0
+   }
+  },
+  {
+   "arm": "on",
+   "flag": true,
+   "samples_ms": [
+    78.435,
+    78.451,
+    78.504,
+    78.522,
+    78.567,
+    78.579,
+    78.62
+   ],
+   "median_ms": 78.522,
+   "peak_allocated_mib": 1751.0,
+   "repack_stats": {
+    "applied": 19,
+    "skipped": 0
+   }
+  },
+  {
+   "arm": "off",
+   "flag": false,
+   "samples_ms": [
+    111.308,
+    111.316,
+    111.389,
+    111.507,
+    111.615,
+    112.574,
+    112.798
+   ],
+   "median_ms": 111.507,
+   "peak_allocated_mib": 1630.6,
+   "repack_stats": {
+    "applied": 19,
+    "skipped": 0
+   }
+  }
+ ],
+ "summary": {
+  "baseline_medians_ms": [
+   110.993,
+   111.296,
+   111.507
+  ],
+  "candidate_medians_ms": [
+   78.476,
+   78.522
+  ],
+  "aa_band_ms": 0.514,
+  "best_case_delta_ms": -33.031,
+  "median_delta_ms": -32.766,
+  "speedup": 1.4174,
+  "step_saved_ms": 32.766,
+  "step_pct": 10.9,
+  "output_max_abs_on_vs_off": 6.103515625e-05,
+  "outputs_bitwise_equal": false
+ }
+}

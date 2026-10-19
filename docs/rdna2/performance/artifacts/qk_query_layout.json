@@ -1,0 +1,87 @@
+{
+ "shapes": {
+  "H": 32,
+  "D": 128,
+  "q_tokens": 5120,
+  "k_tokens": 10287,
+  "chunk": 1024
+ },
+ "strides": {
+  "q_strided": [
+   128,
+   4096,
+   1
+  ],
+  "q_contig": [
+   655360,
+   128,
+   1
+  ],
+  "key_strided": [
+   128,
+   1,
+   4096
+  ],
+  "key_packed": [
+   1316736,
+   10287,
+   1
+  ]
+ },
+ "identity": {
+  "gcn": "gfx1030",
+  "override": "10.3.0",
+  "alloc_conf": "garbage_collection_threshold:0.8,max_split_size_mb:512,expandable_segments:True"
+ },
+ "arms": {
+  "q_strided_key_packed": {
+   "medians_ms": [
+    37.938,
+    38.03,
+    38.134
+   ],
+   "best_ms": 37.938,
+   "tflops": 11.37,
+   "gain_vs_shipped_ms": 0.0,
+   "step_gain_ms_x32": 0.0
+  },
+  "q_contig_key_packed": {
+   "medians_ms": [
+    23.225,
+    23.083
+   ],
+   "best_ms": 23.083,
+   "tflops": 18.69,
+   "gain_vs_shipped_ms": 14.855,
+   "step_gain_ms_x32": 475.4
+  },
+  "q_strided_key_strided": {
+   "medians_ms": [
+    68.094
+   ],
+   "best_ms": 68.094,
+   "tflops": 6.34,
+   "gain_vs_shipped_ms": -30.156,
+   "step_gain_ms_x32": -965.0
+  },
+  "q_contig_key_strided": {
+   "medians_ms": [
+    59.977
+   ],
+   "best_ms": 59.977,
+   "tflops": 7.19,
+   "gain_vs_shipped_ms": -22.039,
+   "step_gain_ms_x32": -705.2
+  },
+  "q_strided_plus_copy_key_packed": {
+   "medians_ms": [
+    24.302
+   ],
+   "best_ms": 24.302,
+   "tflops": 17.75,
+   "gain_vs_shipped_ms": 13.636,
+   "step_gain_ms_x32": 436.4
+  }
+ },
+ "aa_band_ms": 0.196
+}
