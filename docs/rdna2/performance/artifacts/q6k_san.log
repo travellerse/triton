@@ -1,0 +1,20 @@
+n=     1 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     1 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     3 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     3 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     5 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     5 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     8 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     8 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     9 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     9 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=    17 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=    17 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=    64 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=    64 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=  4097 torch.float16    sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=  4097 torch.bfloat16   sanitize_d=True exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+q6k_gate_up    torch   10.696 -> triton    1.033 ms x10.35 (275 GB/s) exact=True
+q6k_proj       torch    1.529 -> triton    0.108 ms x14.17 (438 GB/s) exact=True
+q6k_down       torch    4.817 -> triton    0.508 ms x9.48 (279 GB/s) exact=True
+exactness failures: 0 of 16

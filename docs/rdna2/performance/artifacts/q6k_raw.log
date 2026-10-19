@@ -1,0 +1,17 @@
+n=     1 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     1 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     3 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=8 nan_pos_differ=False inf_pos_differ=False
+n=     3 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     5 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=3 nan_pos_differ=False inf_pos_differ=False
+n=     5 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     8 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=3 nan_pos_differ=False inf_pos_differ=False
+n=     8 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=     9 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=11 nan_pos_differ=False inf_pos_differ=False
+n=     9 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=0 nan_pos_differ=False inf_pos_differ=False
+n=    17 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=272 nan_pos_differ=False inf_pos_differ=False
+n=    17 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=256 nan_pos_differ=False inf_pos_differ=False
+n=    64 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=1070 nan_pos_differ=False inf_pos_differ=False
+n=    64 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=1024 nan_pos_differ=False inf_pos_differ=False
+n=  4097 torch.float16    sanitize_d=False exact=True finite_mismatch=0 nan=40280 nan_pos_differ=False inf_pos_differ=False
+n=  4097 torch.bfloat16   sanitize_d=False exact=True finite_mismatch=0 nan=37382 nan_pos_differ=False inf_pos_differ=False
+exactness failures: 0 of 16
