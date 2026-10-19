@@ -156,8 +156,13 @@ bf16 and fp16 are unchanged. Correctness is pinned by the `scaled_upcast_fp8_sw_
 `test/Conversion/amd/tritongpu_to_llvm_rdna.mlir` (red when the select is removed). The same defect
 in the plain fp8→bf16 software cast (`OcpF8ToBf16SW`, which `tl.cast(..., bf16)` takes on these
 families) got the equivalent guard for both OCP formats — equality against 0x7F for E4M3FN, unsigned
->0x7C for E5M2 so infinity is not caught — pinned by the `fp8_e4m3_bf16_sw_nan` and
-`fp8_e5m2_bf16_sw_nan` chunks.
+>0x7C for E5M2 — plus a second equality with 0x7C that restores the signed infinity. That last half
+was found on hardware: the software bit trick turned E5M2 +Inf into 65536.0. The guards are pinned
+by the `fp8_e4m3_bf16_sw_nan` and `fp8_e5m2_bf16_sw_nan` chunks, and
+[rdna2_fp8_nan_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_fp8_nan_probe.py)
+runs the whole set on the card (native gfx1031, RX 6700 XT): finite uniform dots for e4m3/e5m2/e2m1,
+NaN operands and NaN scales, ±inf, ±448/±57344, and 448×448 through the scaled upcast — ten checks,
+all pass. Grade: **MEASURED** on gfx1031.
 
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
 gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (58,088 and 87,225 instructions for mxfp8),
