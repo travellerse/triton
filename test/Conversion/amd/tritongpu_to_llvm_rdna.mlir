@@ -144,12 +144,15 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     tt.return
   }
 
-  // E5M2 has no dedicated NaN bit pattern: magnitudes 0x7D..0x7F are NaNs and 0x7C is infinity,
-  // so the guard is an unsigned "greater than 0x7C" on the sign-cleared byte.
+  // E5M2 has no dedicated NaN bit pattern: magnitudes 0x7D..0x7F are NaNs and 0x7C is infinity.
+  // The NaN guard is an unsigned "greater than 0x7C" on the sign-cleared byte, and the infinity
+  // guard is an equality with 0x7C (0x7C alone would otherwise come out as 65536).
   // FP8-SW-LABEL: fp8_e5m2_bf16_sw_nan
   // FP8-SW: %[[ABS5:.+]] = llvm.and %{{.+}}, %{{.+}} : i8
   // FP8-SW: %[[NAN5:.+]] = llvm.icmp "ugt" %[[ABS5]], %{{.+}} : i8
   // FP8-SW: llvm.select %[[NAN5]], %{{.+}}, %{{.+}} : i1, bf16
+  // FP8-SW: %[[INF5:.+]] = llvm.icmp "eq" %[[ABS5]], %{{.+}} : i8
+  // FP8-SW: llvm.select %[[INF5]], %{{.+}}, %{{.+}} : i1, bf16
   tt.func @fp8_e5m2_bf16_sw_nan(%in: tensor<32x64xf8E5M2, #fp8blocked>, %out: tensor<32x64x!tt.ptr<bf16>, #fp8blocked>) {
     %0 = tt.fp_to_fp %in : tensor<32x64xf8E5M2, #fp8blocked> -> tensor<32x64xbf16, #fp8blocked>
     tt.store %out, %0 : tensor<32x64x!tt.ptr<bf16>, #fp8blocked>

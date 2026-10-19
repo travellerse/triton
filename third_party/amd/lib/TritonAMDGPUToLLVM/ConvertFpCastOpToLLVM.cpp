@@ -545,20 +545,26 @@ SmallVector<Value> OcpF8ToBf16SW(Location loc,
                             b.extract_element(bf16_ty, out1, b.i32_val(0)),
                             b.extract_element(bf16_ty, out1, b.i32_val(1))};
 
-  // OCP fp8 NaNs must survive the software upcast. E4M3FN encodes them as
+  // OCP fp8 specials must survive the software upcast. E4M3FN encodes NaN as
   // 0x7F/0xFF; E5M2 as an all-ones exponent with a non-zero mantissa
-  // (magnitudes 0x7D..0x7F, whereas 0x7C is infinity). The shifts and bias
-  // multiply above turn all of those into finite values, so restore a
-  // canonical bf16 NaN, matching the fp8->f16 software path.
+  // (magnitudes 0x7D..0x7F) and infinity as magnitude 0x7C. The shifts and bias
+  // multiply above turn all of those into finite values (0x7C lands on 65536),
+  // so restore them explicitly, matching the fp8->f16 software path.
   Value nanBf16 = b.bitcast(b.i16_val(0x7FC0), bf16_ty);
   for (size_t i = 0; i < ret.size(); ++i) {
     Value abs = b.and_(v[i], b.i8_val(0x7F));
-    Value isNan;
-    if constexpr (std::is_same_v<SrcFPType, Float8E4M3FNType>)
-      isNan = b.icmp_eq(abs, b.i8_val(0x7F));
-    else
-      isNan = b.icmp_ugt(abs, b.i8_val(0x7C));
-    ret[i] = b.select(isNan, nanBf16, ret[i]);
+    if constexpr (std::is_same_v<SrcFPType, Float8E4M3FNType>) {
+      Value isNan = b.icmp_eq(abs, b.i8_val(0x7F));
+      ret[i] = b.select(isNan, nanBf16, ret[i]);
+    } else {
+      Value isNan = b.icmp_ugt(abs, b.i8_val(0x7C));
+      ret[i] = b.select(isNan, nanBf16, ret[i]);
+      Value isInf = b.icmp_eq(abs, b.i8_val(0x7C));
+      Value signBit =
+          b.shl(b.zext(i16_ty, b.and_(v[i], b.i8_val(0x80))), b.i16_val(8));
+      Value infBf16 = b.bitcast(b.or_(b.i16_val(0x7F80), signBit), bf16_ty);
+      ret[i] = b.select(isInf, infBf16, ret[i]);
+    }
   }
   return ret;
 }
