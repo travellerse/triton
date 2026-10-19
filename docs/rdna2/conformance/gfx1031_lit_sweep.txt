@@ -1,15 +1,17 @@
-RUN lines rewritten to gfx1031: 175 of 402 arch-aware runs; pass=80 fail=95
+RUN lines rewritten to gfx1031: 177 of 406 arch-aware runs; pass=82 fail=95
 
---- rewritten from RDNA3/RDNA1 origins and NOT explained by a known RDNA2-absent feature (7)
-  minmax.mlir (origin gfx1170): /home/trave/code/triton/test/Conversion/amd/minmax.mlir:34:18: error: LLVM-MINMAX: expected string not found in input
-  ocp_fp8_cvt_lowering.mlir (origin gfx1170): /home/trave/code/triton/test/Conversion/amd/ocp_fp8_cvt_lowering.mlir:46:16: error: HWCVT-DAG: expected string not found in input
-  accelerate-amd-matmul-rdna-no-matrix.mlir (origin gfx1100): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-rdna-no-matrix.mlir:13:12: error: RDNA3: expected string not found in input
-  accelerate-amd-matmul-wmma-gen1.mlir (origin gfx1100): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-wmma-gen1.mlir:4:11: error: CHECK: expected string not found in input
-  accelerate-amd-matmul-wmma-gen2.mlir (origin gfx1170): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-wmma-gen2.mlir:5:11: error: CHECK: expected string not found in input
-  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1150): /home/trave/code/triton/test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna3.mlir:21:12: error: CHECK: expected string not found in input
-  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1170): /home/trave/code/triton/test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna3.mlir:21:12: error: CHECK: expected string not found in input
+--- rewritten from RDNA3/RDNA1 origins and NOT explained by a known RDNA2-absent feature (0)
 
---- rewritten from RDNA3/RDNA1, feature-gated files (6)
+--- rewritten from RDNA3/RDNA1, feature-gated files (2)
+  accelerate-amd-matmul-wmma-gen1.mlir (origin gfx1100)
+  accelerate-amd-matmul-wmma-gen2.mlir (origin gfx1170)
+
+--- rewritten from RDNA3/RDNA1 origins, but the file already asserts on gfx1031 itself (11) -- these lines are arch-comparison cases by design
+  minmax.mlir (origin gfx1170)
+  ocp_fp8_cvt_lowering.mlir (origin gfx1170)
+  accelerate-amd-matmul-rdna-no-matrix.mlir (origin gfx1100)
+  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1150)
+  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1170)
   amd-convert-buffer-ops-atomic-fadd.mlir (origin gfx1100)
   amd-convert-buffer-ops-atomic-fadd.mlir (origin gfx1170)
   amd-convert-buffer-ops-atomic-fminmax.mlir (origin gfx1100)

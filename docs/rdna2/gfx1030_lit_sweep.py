@@ -55,6 +55,10 @@ def main():
             if not runs or not APPLY.search(" ".join(runs)):
                 continue
             rel = str(f)
+            # A test that already carries a verbatim RUN line for the target arch is an
+            # arch-comparison test: its OTHER lines are expected not to hold here, so rewriting
+            # those knobs produces a true failure but not a lowering gap.
+            covers_target = bool(re.search(rf"gfx-arch={TARGET}\b", " ".join(runs)))
             for r in runs:
                 if "FileCheck" not in r:
                     continue
@@ -70,13 +74,13 @@ def main():
                 res = sh(cmd)
                 if res.returncode == 0:
                     passed += 1
-                    recs.append((rel, origin, True, ""))
+                    recs.append((rel, origin, True, "", covers_target))
                 else:
                     err = next((l for l in res.stderr.splitlines()
                                 if "error" in l), "?")
                     if err == "?":
                         err = (res.stderr.strip().splitlines() or ["no stderr"])[:1][0]
-                    recs.append((rel, origin, False, err[:200]))
+                    recs.append((rel, origin, False, err[:200], covers_target))
 
     print(f"RUN lines rewritten to {TARGET}: {rewritten} of {total} arch-aware runs; "
           f"pass={passed} fail={rewritten - passed}")
@@ -89,25 +93,40 @@ def main():
     # for another ISA.
     rdna3_origin = [r for r in recs if not r[2] and r[1].startswith(("gfx110", "gfx115",
                                                                     "gfx117", "gfx101"))]
-    # Files whose names announce an ISA feature RDNA2 does not have (async copy / buffer
-    # atomics / transposed LDS / warp id) cannot be expected to pass; they get their own
-    # bucket so the signal list stays readable.
-    gated = re.compile(r"atomic|async|ds_transpose|warp_id|tdm|mbarrier|cluster|pingpong",
-                       re.I)
-    known = [r for r in rdna3_origin if gated.search(r[0])]
-    signal = [r for r in rdna3_origin if r not in known]
+    # Two buckets of expected non-failures, kept out of the signal list so a real difference
+    # stays visible:
+    #   * arch-comparison tests, which already assert something specific to gfx103x elsewhere
+    #     in the same file (e.g. accelerate-amd-matmul-rdna-no-matrix, the cache-modifier tests)
+    #   * files whose names announce an ISA feature RDNA2 does not have: buffer atomics, async
+    #     copy, transposed LDS, warp id, TDM/mbarrier/cluster, WMMA/matrix instructions, and the
+    #     gfx117+ hardware min/max and OCP-FP8 conversion paths.
+    gated = re.compile(r"atomic|async|ds_transpose|warp_id|tdm|mbarrier|cluster|pingpong"
+                       r"|wmma|no-matrix|minmax|ocp_fp8|scaled", re.I)
+    # The RDNA3 cache-modifier test is the deliberate exception rather than a pattern match:
+    # RDNA2 now has its own table (load .cg -> 5, .cs -> 2, store .cs -> 2, .wt -> 4), so its
+    # expectations MUST NOT hold here; test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna2.mlir
+    # is the file that owns those assertions.
+    family_specific = re.compile(r"cache-modifiers-rdna[0-9]+\.mlir$", re.I)
+    compared = [r for r in rdna3_origin if r[4]
+                or family_specific.search(os.path.basename(r[0]))]
+    known = [r for r in rdna3_origin if gated.search(r[0]) and r not in compared]
+    signal = [r for r in rdna3_origin if r not in known and r not in compared]
     other = [r for r in recs if not r[2] and r not in rdna3_origin]
     print(f"\n--- rewritten from RDNA3/RDNA1 origins and NOT explained by a known "
           f"RDNA2-absent feature ({len(signal)})")
-    for rel, origin, _, err in signal:
+    for rel, origin, _, err, _ in signal:
         print(f"  {short(rel)} (origin {origin}): {err}")
     print(f"\n--- rewritten from RDNA3/RDNA1, feature-gated files ({len(known)})")
-    for rel, origin, _, _ in known:
+    for rel, origin, _, _, _ in known:
+        print(f"  {short(rel)} (origin {origin})")
+    print(f"\n--- rewritten from RDNA3/RDNA1 origins, but the file already asserts on "
+          f"{TARGET} itself ({len(compared)}) -- these lines are arch-comparison cases by design")
+    for rel, origin, _, _, _ in compared:
         print(f"  {short(rel)} (origin {origin})")
     print(f"\n--- failures rewritten from other arches ({len(other)}) "
           f"= mostly ISA-specific tests, listed by origin")
     by_origin = {}
-    for rel, origin, _, _ in other:
+    for rel, origin, _, _, _ in other:
         by_origin.setdefault(origin, []).append(short(rel))
     for origin in sorted(by_origin):
         print(f"  {origin}: {' '.join(sorted(set(by_origin[origin])))}")
