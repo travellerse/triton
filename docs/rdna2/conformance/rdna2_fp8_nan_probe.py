@@ -35,7 +35,8 @@ def record(name, ok, detail=""):
 @triton.jit
 def dot_scaled_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out,
                  BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr,
-                 PACK_A: tl.constexpr, PACK_B: tl.constexpr, FMT: tl.constexpr):
+                 PACK_A: tl.constexpr, PACK_B: tl.constexpr,
+                 FMT_A: tl.constexpr, FMT_B: tl.constexpr):
     ka: tl.constexpr = BK // PACK_A
     kb: tl.constexpr = BK // PACK_B
     sk: tl.constexpr = BK // 32
@@ -43,7 +44,7 @@ def dot_scaled_k(a_ptr, b_ptr, sa_ptr, sb_ptr, out,
     b = tl.load(b_ptr + tl.arange(0, kb)[:, None] * BN + tl.arange(0, BN)[None, :])
     sa = tl.load(sa_ptr + tl.arange(0, BM)[:, None] * sk + tl.arange(0, sk)[None, :])
     sb = tl.load(sb_ptr + tl.arange(0, BN)[:, None] * sk + tl.arange(0, sk)[None, :])
-    acc = tl.dot_scaled(a, sa, FMT, b, sb, FMT)
+    acc = tl.dot_scaled(a, sa, FMT_A, b, sb, FMT_B)
     tl.store(out + tl.arange(0, BM)[:, None] * BN + tl.arange(0, BN)[None, :], acc)
 
 
@@ -62,20 +63,20 @@ def u8(seq, shape=None):
     return t.reshape(shape) if shape else t
 
 
-def run_dot(fmt, pack, a, b, sa=None, sb=None):
-    ka, kb = BK // pack, BK // pack
-    a = u8(a, (BM, ka))
-    b = u8(b, (kb, BN))
+def run_dot(fmt_a, fmt_b, pack_a, pack_b, a, b, sa=None, sb=None):
+    a = u8(a, (BM, BK // pack_a))
+    b = u8(b, (BK // pack_b, BN))
     sa = u8(sa, (BM, SK)) if sa is not None else torch.full((BM, SK), 127, dtype=torch.uint8, device="cuda")
     sb = u8(sb, (BN, SK)) if sb is not None else torch.full((BN, SK), 127, dtype=torch.uint8, device="cuda")
     out = torch.empty((BM, BN), dtype=torch.float32, device="cuda")
     dot_scaled_k[(1,)](a, b, sa, sb, out, BM=BM, BN=BN, BK=BK,
-                       PACK_A=pack, PACK_B=pack, FMT=fmt, num_warps=4)
+                       PACK_A=pack_a, PACK_B=pack_b, FMT_A=fmt_a, FMT_B=fmt_b,
+                       num_warps=4)
     return out
 
 
 def check_uniform(fmt, pack, one_byte):
-    out = run_dot(fmt, pack,
+    out = run_dot(fmt, fmt, pack, pack,
                   [one_byte] * (BM * (BK // pack)),
                   [one_byte] * ((BK // pack) * BN))
     ok = bool(torch.equal(out, torch.full_like(out, float(BK))))
@@ -86,7 +87,7 @@ def check_uniform(fmt, pack, one_byte):
 def nan_row(fmt, one_byte, bad):
     a = bytearray([one_byte] * (BM * BK))
     a[0] = bad
-    out = run_dot(fmt, 1, bytes(a), [one_byte] * (BK * BN))
+    out = run_dot(fmt, fmt, 1, 1, bytes(a), [one_byte] * (BK * BN))
     row0_nan = bool(torch.isnan(out[0]).all())
     rest_ok = bool(torch.equal(out[1:], torch.full_like(out[1:], float(BK))))
     record(f"{fmt} 0x{bad:02X} operand poisons its row", row0_nan and rest_ok,
@@ -122,7 +123,8 @@ def main():
 
     sa = bytearray([127] * (BM * SK))
     sa[0] = 0xFF
-    out = run_dot("e4m3", 1, [0x38] * (BM * BK), [0x38] * (BK * BN), sa=bytes(sa))
+    out = run_dot("e4m3", "e4m3", 1, 1, [0x38] * (BM * BK), [0x38] * (BK * BN),
+                  sa=bytes(sa))
     ok = bool(torch.isnan(out[0]).all()) and bool(
         torch.equal(out[1:], torch.full_like(out[1:], float(BK))))
     record("e4m3 E8M0 NaN scale poisons its row", ok, f"row0={out[0, :3].tolist()}")
@@ -135,10 +137,21 @@ def main():
               {2: math.inf, 3: -math.inf, 4: 57344.0, 5: -57344.0, 6: 1.0})
 
     # max finite E4M3 through the scaled upcast's bias multiply
-    out = run_dot("e4m3", 1, [0x7E] * (BM * BK), [0x7E] * (BK * BN))
+    out = run_dot("e4m3", "e4m3", 1, 1, [0x7E] * (BM * BK), [0x7E] * (BK * BN))
     expect = float(BK) * 448.0 * 448.0
     ok = bool(torch.equal(out, torch.full_like(out, expect)))
     record("e4m3 448x448 uniform -> 64*448^2", ok, f"got {out[0, 0].item()}")
+
+    # Packed FP4 nibble order: the uniform e2m1 case above cannot tell low-first from high-first.
+    # A is 1.0 on even K and 2.0 on odd K, and a byte's low nibble is the even-K element. Then
+    # 0x12 = (low 1.0, high 0.5) gives 32*1 + 32*1 = 64, and 0x21 = (low 0.5, high 1.0) gives
+    # 16 + 64 = 80; a swapped pack order fails both.
+    a_mixed = [0x38 if k % 2 == 0 else 0x40 for _ in range(BM) for k in range(BK)]
+    for byte, expect in ((0x12, 64.0), (0x21, 80.0)):
+        out = run_dot("e4m3", "e2m1", 1, 2, a_mixed, [byte] * ((BK // 2) * BN))
+        ok = bool(torch.equal(out, torch.full_like(out, expect)))
+        record(f"e2m1 pack order byte 0x{byte:02X} -> {expect:g}", ok,
+               f"got {out[0, 0].item()}")
 
     print(f"\n{'ALL PASS' if not FAILS else 'FAILURES: ' + ', '.join(FAILS)}")
     return 1 if FAILS else 0
