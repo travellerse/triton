@@ -102,7 +102,8 @@ def shipped_matvec(blocks, x, N, K, bpp=8):
     deq = torch.empty(n_blocks * QK_K, device=blocks.device, dtype=torch.float16)
     deq6k_ref[(triton.cdiv(n_blocks, bpp),)](blocks, deq, n_blocks, BPP=bpp,
                                              BB=Q6K_BYTES, KK=QK_K, num_warps=4)
-    return torch.matmul(deq.reshape(N, K), x)
+    x2 = x.reshape(1, K) if x.dim() == 1 else x
+    return torch.matmul(x2, deq.reshape(N, K).t())
 
 
 def make_blocks(n_blocks, seed=0):
@@ -123,15 +124,18 @@ def reference(blocks, x, N, K):
 
 
 def check(N, K, bn):
+    torch.manual_seed(1234)
     nb = K // QK_K
     blocks = make_blocks(N * nb)
     x = torch.randn(K, dtype=torch.float16, device="cuda")
     got = fused_matvec(blocks, x, N, K, bn=bn)
     ref = reference(blocks, x, N, K)
-    rel = ((got - ref).abs() / ref.abs().clamp_min(1e-3)).max().item()
-    ok = rel < 2e-2
+    max_abs = (got - ref).abs().max().item()
+    scale = ref.abs().max().clamp_min(1e-6).item()
+    rel = max_abs / scale
+    ok = rel < 1e-3
     print(f"[{'PASS' if ok else 'FAIL'}] fused Q6_K matvec {N}x{K} (BN={bn}) "
-          f"max_rel={rel:.3e} max_abs={(got - ref).abs().max().item():.3e}")
+          f"rel_to_max={rel:.3e} max_abs={max_abs:.3e} out_scale={scale:.3e}")
     return ok
 
 

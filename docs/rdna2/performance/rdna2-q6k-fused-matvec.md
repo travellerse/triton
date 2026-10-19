@@ -15,9 +15,13 @@ never written or read.
 
 | shape | fused | dequant + matmul | speedup | A/A | fused throughput |
 | --- | --- | --- | --- | --- | --- |
-| 4096×4096 | **0.063 ms** | 0.673 ms | **10.76×** | 0.23% | 268.2 Gweight/s |
-| 4096×12288 | **0.170 ms** | 2.008 ms | **11.78×** | 0.18% | 295.2 Gweight/s |
-| 24576×4096 | **0.332 ms** | 6.310 ms | **18.98×** | 0.43% | 302.8 Gweight/s |
+| 4096×4096 | **0.063 ms** | 0.270 ms | **4.28×** | 0.74% | 266.5 Gweight/s |
+| 4096×12288 | **0.172 ms** | 1.894 ms | **11.04×** | 0.03% | 293.4 Gweight/s |
+| 24576×4096 | **0.333 ms** | 3.877 ms | **11.65×** | 0.20% | 302.5 Gweight/s |
+
+The matmul arm is `x @ W.T` (the `F.linear` orientation); the first version used `W @ x`, which is
+several times slower at these shapes and flattered the fused kernel, so these are the corrected
+numbers.
 
 BN=4 instead of 8 is decisive for this format: 0.063 vs 0.176 ms at 4096² and 0.332 vs 0.924 at
 24576×4096 (2.8×), with the A/A band tightening from 3.9% to 0.43% at the largest shape. At
@@ -34,8 +38,8 @@ against the plugin's `dequantize_blocks_Q6_K`.
 ## What it would be worth
 
 If each Q6_K tensor is used once per decode token, the 128 4096×4096 projections save
-`128 × (0.673 − 0.063) ≈ 78 ms` and the 16 4096×12288 down projections `16 × (2.008 − 0.170) ≈
-29 ms` versus dequant + matmul. That is arithmetic from the per-shape measurements, not a measured
+`128 × (0.270 − 0.063) ≈ 26 ms` and the 16 4096×12288 down projections `16 × (1.894 − 0.172) ≈
+28 ms` versus dequant + matmul. That is arithmetic from the per-shape measurements, not a measured
 whole-step number; no end-to-end decode timing was run.
 
 ## Limits
