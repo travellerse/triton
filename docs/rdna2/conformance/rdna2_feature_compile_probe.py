@@ -6,6 +6,10 @@ compatibility question: are there language features whose lowering paths never g
 and therefore fail (or silently degrade) at compile time? This probe compiles one small kernel per
 feature against an explicit `GPUTarget`, so it runs with no device and no launches.
 
+The runtime values of these features (histogram, sort, argmax, map_elementwise, inline asm,
+interleave, join/split, a volatile load, always-true device_asserts) are checked separately by
+`rdna2_feature_runtime_probe.py`; all of them pass on native gfx1031.
+
 It also records two kernel-option behaviours that are *not* compile failures:
   * num_ctas > 1 is rejected up front with "num_ctas > 1 not supported on gfx1030" -- hardware has
     no clusters, and the rejection is actionable.
