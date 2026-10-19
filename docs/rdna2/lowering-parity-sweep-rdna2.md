@@ -16,6 +16,12 @@ parity probe.
 RUN lines rewritten to gfx1030: 175 of 402 arch-aware runs; pass=80 fail=95
 ```
 
+Re-running the identical sweep with `--target gfx1031` (the part in this machine; the host's
+`HSA_OVERRIDE_GFX_VERSION` otherwise hides it) gives **the same 175 / 80 / 95 and the same seven
+RDNA3/RDNA1-origin failures**, so the parity statement covers both steppings, not just the one
+torch reports. Artifact:
+[conformance/gfx1031_lit_sweep.txt](file:///home/trave/code/triton/docs/rdna2/conformance/gfx1031_lit_sweep.txt).
+
 A failure means *that test's own expectations* do not hold on RDNA2. Because many of these
 files are deliberately multi-arch (one line per ISA, each with its own check prefix),
 rewriting the RDNA3 line to RDNA2 is *supposed* to fail, so raw failure counts say nothing;
@@ -27,7 +33,7 @@ arch and by file name; the RDNA3/RDNA1-origin failures are the only interesting 
 
 | count | file(s) | cause | verdict |
 | --- | --- | --- | --- |
-| 2 | `amd-buffer-cache-modifiers-rdna3.mlir` | no GFX10 cache-policy mapping; RDNA2 emits `aux = 0` | documented today in [cache-modifier-gap-rdna2.md](file:///home/trave/code/triton/docs/rdna2/cache-modifier-gap-rdna2.md), pinned by `amd-buffer-cache-modifiers-rdna2.mlir` |
+| 2 | `amd-buffer-cache-modifiers-rdna3.mlir` | RDNA2 uses the pre-GFX12 SC0/NT/SC1 table (3/17), not RDNA3's GLC/SLC/DLC table (1/7) | by design since the mapping landed — see [performance/rdna2-cache-modifiers-enabled.md](file:///home/trave/code/triton/docs/rdna2/performance/rdna2-cache-modifiers-enabled.md); `amd-buffer-cache-modifiers-rdna2.mlir` pins the RDNA2 side |
 | 2 | `accelerate-amd-matmul-wmma-gen1/gen2.mlir` | WMMA is RDNA3+; RDNA2 has no matrix instructions | ISA boundary, not a gap |
 | 1 | `accelerate-amd-matmul-rdna-no-matrix.mlir` | the rewritten line was the file's own `RDNA3`-prefix WMMA expectation; the same file already runs `NO-MATRIX` on gfx1030/gfx1031 and passes | sweep artifact, not a gap |
 | 1 | `minmax.mlir` | `supportMaximumMinimum()` puts RDNA2 in the same software-NaN group as RDNA3/RDNA4/gfx942; only gfx950/gfx1170/gfx1250 take `LLVM-MINMAX` | by design |

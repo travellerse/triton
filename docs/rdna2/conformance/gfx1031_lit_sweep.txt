@@ -1,0 +1,26 @@
+RUN lines rewritten to gfx1031: 175 of 402 arch-aware runs; pass=80 fail=95
+
+--- rewritten from RDNA3/RDNA1 origins and NOT explained by a known RDNA2-absent feature (7)
+  minmax.mlir (origin gfx1170): /home/trave/code/triton/test/Conversion/amd/minmax.mlir:34:18: error: LLVM-MINMAX: expected string not found in input
+  ocp_fp8_cvt_lowering.mlir (origin gfx1170): /home/trave/code/triton/test/Conversion/amd/ocp_fp8_cvt_lowering.mlir:46:16: error: HWCVT-DAG: expected string not found in input
+  accelerate-amd-matmul-rdna-no-matrix.mlir (origin gfx1100): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-rdna-no-matrix.mlir:13:12: error: RDNA3: expected string not found in input
+  accelerate-amd-matmul-wmma-gen1.mlir (origin gfx1100): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-wmma-gen1.mlir:4:11: error: CHECK: expected string not found in input
+  accelerate-amd-matmul-wmma-gen2.mlir (origin gfx1170): /home/trave/code/triton/test/TritonGPU/amd/accelerate-amd-matmul-wmma-gen2.mlir:5:11: error: CHECK: expected string not found in input
+  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1150): /home/trave/code/triton/test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna3.mlir:21:12: error: CHECK: expected string not found in input
+  amd-buffer-cache-modifiers-rdna3.mlir (origin gfx1170): /home/trave/code/triton/test/TritonGPU/amd/amd-buffer-cache-modifiers-rdna3.mlir:21:12: error: CHECK: expected string not found in input
+
+--- rewritten from RDNA3/RDNA1, feature-gated files (6)
+  amd-convert-buffer-ops-atomic-fadd.mlir (origin gfx1100)
+  amd-convert-buffer-ops-atomic-fadd.mlir (origin gfx1170)
+  amd-convert-buffer-ops-atomic-fminmax.mlir (origin gfx1100)
+  amd-convert-buffer-ops-atomic-fminmax.mlir (origin gfx1170)
+  amd-convert-buffer-ops-atomic-rmw.mlir (origin gfx1100)
+  amd-convert-buffer-ops-atomic-rmw.mlir (origin gfx1170)
+
+--- failures rewritten from other arches (82) = mostly ISA-specific tests, listed by origin
+  gfx1200: accelerate-amd-matmul-wmma-gen2.mlir amd-convert-buffer-ops-atomic-fadd.mlir amd-convert-buffer-ops-atomic-fminmax.mlir amd-convert-buffer-ops-atomic-rmw.mlir barrier_op_to_llvm.mlir ocp_fp8_cvt_lowering.mlir warp_id_to_llvm.mlir
+  gfx1250: accelerate-amd-matmul-wmma-cdna5.mlir amd-convert-buffer-ops-atomic-fadd.mlir amd-convert-buffer-ops-atomic-fminmax.mlir amd-convert-buffer-ops-atomic-rmw.mlir amd-convert-buffer-ops.mlir amd-scaled-downcast-cdna5.mlir amd-scaled-upcast-cdna5.mlir amd-tdm-fused-wait-count.mlir amd-update-async-wait-count-without-token.mlir amd-update-async-wait-count.mlir async_ops_to_llvm_cdna5.mlir barrier_op_to_llvm.mlir buffer_ops_cdna5.mlir cluster_load.mlir ds_transpose_cdna5.mlir mbarrier_ops_to_llvm_cdna5.mlir minmax.mlir protongpu_to_llvm.mlir reduce_tree_vectorize.mlir tritongpu_tdm_to_llvm.mlir tritongpu_to_llvm.mlir tritongpu_wmma_dot_to_llvm.mlir warp_id_to_llvm.mlir warp_specialize_to_llvm.mlir
+  gfx1250-strict: accelerate-amd-matmul-wmma-cdna5.mlir async_ops_to_llvm_cdna5.mlir tritongpu_wmma_dot_to_llvm.mlir
+  gfx90a: reduce_tree_vectorize.mlir
+  gfx942: accelerate-amd-matmul-chain-dot.mlir accelerate-amd-matmul-mfma-kpack.mlir accelerate-amd-matmul-mfma.mlir amd-convert-buffer-ops-atomic-fadd.mlir amd-convert-buffer-ops-atomic-fminmax.mlir amd-convert-buffer-ops-atomic-rmw.mlir amd-convert-buffer-ops.mlir async-ops-alias-scopes.mlir async_ops_to_llvm.mlir barrier_op_to_llvm.mlir buffer_load_store.mlir buffer_load_to_local_to_llvm.mlir fp_to_fp.mlir protongpu_to_llvm.mlir reduce_tree_vectorize.mlir tritongpu_to_llvm.mlir
+  gfx950: accelerate-amd-matmul-chain-dot.mlir accelerate-amd-matmul-mfma-decompose-scaled-dot.mlir accelerate-amd-matmul-mfma-gfx950.mlir amd-coalesce-async-copy.mlir amd-convert-buffer-ops-atomic-fadd.mlir amd-convert-buffer-ops-atomic-fminmax.mlir amd-convert-buffer-ops-atomic-rmw.mlir amd-convert-buffer-ops-small-tensor.mlir amd-convert-buffer-ops.mlir amd-convert-warp-pipeline-backedge-head.mlir amd-convert-warp-pipeline.mlir amd-optimize-dot-operands.mlir amd-scaled-downcast-gfx950.mlir amd-scaled-upcast-gfx950.mlir async-ops-alias-scopes.mlir async_ops_to_llvm.mlir barrier_op_to_llvm.mlir buffer_load_store.mlir buffer_load_to_local_to_llvm.mlir ds_transpose.mlir fp_to_fp.mlir minmax.mlir reduce_tree_vectorize.mlir tritongpu_to_llvm.mlir
