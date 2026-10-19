@@ -143,6 +143,13 @@ gfx103x (1970–2702 instructions), while plain fp16 is the one case that reache
 256 `v_dot2c_f32_f16` calls in 907 instructions. Nothing in the format set falls off the family's
 decomposition.
 
+The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
+gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (55,876 and 83,756 instructions for mxfp8),
+with gfx1100 as the control (18,703 / 28,706). Two costs worth knowing before reaching for it:
+compile time is tile-sensitive (43.4 s for 64x64x128 at stages=2 vs 4.6 s for 32x32x64) and the
+large-tile kernel is 5.4x the instruction count of the equivalent plain f16 dot (10,369), which is
+the price of the software upcast on a part with no fp8 hardware. Runtime is unmeasured.
+
 Instruction counts are totals and not comparable across families: gfx103x executes the dot as
 per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
 families issue one instruction for the whole tile. The control rows matter because they show the new
