@@ -9,6 +9,7 @@ process, plus peak allocated VRAM, because memory pressure is the reason weight 
 
 Run under the admission wrapper with the workload interpreter.
 """
+import argparse
 import json
 import os
 import sys
@@ -27,7 +28,25 @@ deq = importlib.import_module("ComfyUI-GGUF.dequant")
 dtt = importlib.import_module("ComfyUI-GGUF.dequant_triton")
 
 SHAPES = [("gate_up", 24576, 4096), ("down", 4096, 12288), ("q_proj", 4096, 4096)]
-Q5K = gguf.GGMLQuantizationType.Q5_K
+
+# Block geometry per quant type. The fp16 scale field is forced finite: a random bit pattern
+# makes d NaN or Inf, and then the comparison is no longer about the decode.
+QTYPE = {
+    "Q5_K": {"enum": gguf.GGMLQuantizationType.Q5_K, "bytes": 176},
+    "Q6_K": {"enum": gguf.GGMLQuantizationType.Q6_K, "bytes": 210},
+}
+
+
+def make_blocks(qtype, n, seed):
+    g = torch.Generator(device="cpu").manual_seed(seed & 0xFFFF)
+    raw = torch.randint(0, 256, (n, QTYPE[qtype]["bytes"]), generator=g, dtype=torch.uint8)
+    if qtype == "Q5_K":
+        for off in (0, 2):
+            bits = torch.randn(n, dtype=torch.float16).view(torch.uint8).reshape(n, 2)
+            raw[:, off:off + 2] = bits
+    else:  # Q6_K keeps d in the last two bytes: normal exponent, random mantissa
+        raw[:, -1] = (raw[:, -1] & 0x03) | 0x38
+    return raw.cuda()
 
 
 def timed(fn):
@@ -51,9 +70,15 @@ def clock_ramp(seconds=8.0):
 
 def main():
     assert torch.cuda.is_available()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--qtype", default="Q5_K", choices=sorted(QTYPE))
+    ap.add_argument("--out", default="/tmp/q21-p1/insitu.json")
+    args = ap.parse_args()
+    qenum = QTYPE[args.qtype]["enum"]
     clock_ramp()
     rep = {"identity": {"device": torch.cuda.get_device_name(0),
                         "gcn": torch.cuda.get_device_properties(0).gcnArchName,
+                        "qtype": args.qtype,
                         "override": os.environ.get("HSA_OVERRIDE_GFX_VERSION"),
                         "plugin_head": os.popen("git -C /home/trave/tools/ComfyUI/custom_nodes/"
                                                 "ComfyUI-GGUF rev-parse --short HEAD").read().strip()},
@@ -61,16 +86,11 @@ def main():
 
     for name, out_f, in_f in SHAPES:
         n = (out_f * in_f) // 256
-        g = torch.Generator(device="cpu").manual_seed(hash((name, out_f)) & 0xFFFF)
-        raw = torch.randint(0, 256, (n, 176), generator=g, dtype=torch.uint8).cuda()
-        # finite d/dmin so the comparison is over values the model can actually contain
-        raw[:, 0:4] = torch.cat([torch.randn(n, dtype=torch.float16).view(torch.uint8).reshape(n, 2),
-                                 torch.randn(n, dtype=torch.float16).view(torch.uint8).reshape(n, 2)],
-                                dim=1).cuda()
+        raw = make_blocks(args.qtype, n, hash((name, out_f)))
 
         for label, flag in (("off", False), ("on", True), ("off", False), ("on", True), ("off", False)):
             dtt.TRITON_DEQUANT = flag
-            fn = lambda: deq.dequantize(raw, Q5K, (out_f, in_f), dtype=torch.float16)
+            fn = lambda: deq.dequantize(raw, qenum, (out_f, in_f), dtype=torch.float16)
             for _ in range(2):
                 timed(fn)
             torch.cuda.empty_cache()
@@ -82,9 +102,9 @@ def main():
             a["peak_mib"].append(round(torch.cuda.max_memory_allocated() / 2**20, 1))
 
         dtt.TRITON_DEQUANT = False
-        ref = deq.dequantize(raw, Q5K, (out_f, in_f), dtype=torch.float16)
+        ref = deq.dequantize(raw, qenum, (out_f, in_f), dtype=torch.float16)
         dtt.TRITON_DEQUANT = True
-        got = deq.dequantize(raw, Q5K, (out_f, in_f), dtype=torch.float16)
+        got = deq.dequantize(raw, qenum, (out_f, in_f), dtype=torch.float16)
         a_off = rep["arms"][f"{name}_off"]["medians_ms"]
         a_on = rep["arms"][f"{name}_on"]["medians_ms"]
         rep["arms"][name] = {
@@ -110,8 +130,11 @@ def main():
         del raw, ref, got
         torch.cuda.empty_cache()
 
-    json.dump(rep, open("/tmp/q21-p1/dequant_insitu.json", "w"), indent=1)
-    print("wrote /tmp/q21-p1/dequant_insitu.json")
+    outdir = os.path.dirname(args.out)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    json.dump(rep, open(args.out, "w"), indent=1)
+    print(f"wrote {args.out}")
     bad = [n for n, r in rep["arms"].items() if not (r["bitwise_equal"] and r["shape_matches"])]
     print("integrated-path exactness failures:", bad or "none")
     return 1 if bad else 0
