@@ -726,6 +726,21 @@ int32_t getCtrlBitsForCacheModifierOnTarget(
   switch (targetInfo.getISAFamily()) {
   case ISAFamily::CDNA3:
   case ISAFamily::CDNA4:
+  // GFX10 accepts the same aux operand: LLVM masks the cache-policy value with ALL_pregfx12 for
+  // RDNA parts as well as CDNA (SIISelLowering.cpp, lowerGlobalLoadStore), so without this case
+  // every .cg/.cs/.cv/.wt on RDNA2 was silently lowered to aux = 0 and dropped.
+  //
+  // Verified on gfx1030: the emitted machine code now differs per modifier (an unmodified load
+  // encodes DC308000, .cg/.cs add LLVM's `slc` field, .cv adds `glc dlc`), and results are
+  // bitwise identical to the unmodified kernel for every load and store modifier. No performance
+  // effect was measurable -- two admitted runs disagreed even in sign -- so this is about
+  // honouring the request, not about speed. See
+  // docs/rdna2/performance/rdna2-cache-modifiers-enabled.md.
+  //
+  // RDNA3's table is deliberately not reused: it sets bit 2, whose meaning on GFX10 is not
+  // established here, whereas these SC0/NT/SC1 positions are the ones LLVM treats as valid for
+  // every pre-GFX12 part.
+  case ISAFamily::RDNA2:
     return getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(cm, isLoad);
   case ISAFamily::RDNA3:
   case ISAFamily::RDNA4m:
@@ -735,8 +750,8 @@ int32_t getCtrlBitsForCacheModifierOnTarget(
   case ISAFamily::CDNA5:
     return getCtrlBitsForCacheModifierOn_GFX12(cm, isLoad, /*$ bypass*/ true);
   default:
-    // GFX10 (RDNA1/RDNA2) has no mapping, so every qualifier lowers to aux = 0 and the
-    // hint is dropped. amd-buffer-cache-modifiers-rdna2.mlir pins that.
+    // RDNA1 and any unknown family: no mapping, so every qualifier lowers to aux = 0 and
+    // the hint is dropped.
     return getDefaultCtrlBitsForCacheModifier(cm);
   }
 }
