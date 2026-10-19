@@ -92,9 +92,16 @@ def run(arch, block_m, block_n, block_k, warps):
         hits = {}
         for tok in INTERESTING.findall(asm):
             hits[tok] = hits.get(tok, 0) + 1
-        spills = re.findall(r"vgpr_spill_count[=:](\d+)", asm)
+        # `vgpr_spill_count` is a metadata field in other backends; on AMD the observable markers
+        # in .amdgcn are the ScratchSize directive and the Folded Spill/Reload annotations. Looking
+        # for the former here reported "no spills" on kernels with 16 KB of scratch per lane.
+        scratch = re.search(r"; ScratchSize: (\d+)", asm)
+        spill_st = len(re.findall(r"Folded Spill", asm))
+        spill_ld = len(re.findall(r"Folded Reload", asm))
         print(f"  {name:8} COMPILES instrs={len(asm.splitlines()):6} "
-              f"dot/lds={dict(sorted(hits.items(), key=lambda kv: -kv[1]))} spills={spills[:1]}")
+              f"dot/lds={dict(sorted(hits.items(), key=lambda kv: -kv[1]))} "
+              f"scratch={scratch.group(1) if scratch else '?'}B "
+              f"spill_st={spill_st} spill_ld={spill_ld}")
 
 
 def main():

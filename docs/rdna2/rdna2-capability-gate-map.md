@@ -128,8 +128,10 @@ RDNA3. Two pieces of evidence:
   [rdna2_dot_scaled_compile_probe.py](file:///home/trave/code/triton/docs/rdna2/conformance/rdna2_dot_scaled_compile_probe.py)
   walks the whole frontend-to-LLVM pipeline against an explicit `GPUTarget` (no device, no launch).
   Every format the frontend accepts (`e2m1`, `e4m3`, `e5m2`, `bf16`, `fp16`, plus mixed
-  `e4m3×e2m1` and `fp16×bf16`) compiles on gfx1030 and native gfx1031, with no reported spills at the
-  probe's 32x32x64 / 4-warp shape:
+  `e4m3×e2m1` and `fp16×bf16`) compiles on gfx1030 and native gfx1031 at the probe's 32x32x64 /
+  4-warp shape. The controls show zero scratch; every gfx103x MX/bf16 case spills a little even at
+  this tile (about 1.1 KB of scratch per lane and ~275 folded spill stores), and plain fp16 is the
+  exception (88 B, 21 stores):
 
 | arch | mxfp8 | mxfp4 | mixed | dot path in `.amdgcn` |
 | --- | --- | --- | --- | --- |
@@ -145,10 +147,14 @@ decomposition.
 
 The feature also survives the form a real MX GEMM uses — a 64x64x128 K-loop with scale loads. On
 gfx1030/gfx1031 it compiles at `num_stages=2` and `3` (55,876 and 83,756 instructions for mxfp8),
-with gfx1100 as the control (18,703 / 28,706). Two costs worth knowing before reaching for it:
-compile time is tile-sensitive (43.4 s for 64x64x128 at stages=2 vs 4.6 s for 32x32x64) and the
-large-tile kernel is 5.4x the instruction count of the equivalent plain f16 dot (10,369), which is
-the price of the software upcast on a part with no fp8 hardware. Runtime is unmeasured.
+with gfx1100 as the control (18,703 / 28,706). Three costs worth knowing before reaching for it:
+compile time is tile-sensitive (43.4 s for 64x64x128 at stages=2 vs 4.6 s for 32x32x64), the
+large-tile kernel is 5.4x the instruction count of the equivalent plain f16 dot (10,369), and
+spilling is substantial — 16,304 B of scratch per lane with 4,328 folded spill stores at 4 warps,
+7,628 B at 8 warps, versus 1,540 B for the plain f16 dot at the same tile; a 32x32x64 loop stays at
+1,212 B. `waves_per_eu` 0/1/2 did not change the scratch size. The first two numbers are partly the
+software upcast's register cost; all of them are compile-time facts and the runtime cost is
+unmeasured.
 
 Instruction counts are totals and not comparable across families: gfx103x executes the dot as
 per-lane FMA (hence only LDS traffic shows up in a dot-mnemonic histogram), while the Matrix-core
