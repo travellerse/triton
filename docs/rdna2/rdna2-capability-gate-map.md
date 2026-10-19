@@ -104,6 +104,39 @@ no `tl.dot` operand type that reaches them, even though LLVM exposes the intrins
 bit). That is a frontend-and-lowering feature, not a gate to widen, and it is the one place where an
 int4 kernel could beat the dequant-then-dot4 path rather than just match it.
 
+## Cross-family gap that is not RDNA2's alone: `eviction_policy` is dropped
+
+`tl.load(..., eviction_policy='evict_first'|'evict_last')` reaches Triton IR on the op (the TTGIR shows
+the attribute) and no AMD lowering reads it — `EvictionPolicy` appears only in
+`third_party/nvidia/lib/TritonNVIDIAGPUToLLVM/LoadStoreOpToLLVM.cpp`, never under `third_party/amd`.
+Measured, not inferred, with `performance/rdna2_eviction_policy_probe.py`, which compares *instruction
+streams* (name-only metadata and `.loc` lines stripped — without that filter a byte diff reports ten
+"differences" for a hint that changes nothing):
+
+| arch | `evict_first` vs no hint | `evict_last` vs no hint | `.cg` control |
+| --- | --- | --- | --- |
+| gfx1030 (38 instr) | identical | identical | 8 lines differ |
+| gfx1031 (38 instr) | identical | identical | 8 lines differ |
+| gfx1100 (39 instr) | identical | identical | 8 lines differ |
+| gfx942 (29 instr) | identical | identical | 4 lines differ |
+
+So the hint is inert on RDNA2, RDNA3 and CDNA alike. Whether it *can* be honoured is a different question
+per family, and for RDNA2 the answer is only half yes: the guide's L2 replacement fields give
+`SLC=1, DLC=0` = "Stream", which ages lines out faster and is therefore the nearest encoding for
+`evict_first` — and it is already exactly what `.cs` requests on this part. There is **no** "keep this
+line" encoding, so `evict_last` cannot be honoured on RDNA2 at all, and an implementation that mapped it
+to `SLC=0, DLC=0` would be silently wrong rather than conservative.
+
+Not implemented, on purpose, for two reasons that are both about evidence rather than effort: making the
+hint mean Stream on RDNA2 is a *policy claim* that needs a measured effect (the cache-policy timing
+attempt is still queued behind the stuck device), and any change here alters CDNA and RDNA3 codegen too,
+which this branch has no way to validate on hardware. The right next step is an upstream question —
+"should `eviction_policy` be a no-op, an error, or a per-family mapping" — not a guess inside the pass.
+
+The load-side row is Table 38 (`SLC=1, DLC=0` → L2 "Stream", L1 "Hit LRU"); the sentence explaining what
+Stream does ("Hit leaves line in cache but do not reset age") is Table 39's, which is the store-and-atomic
+table for the same two fields.
+
 ## What this changes about the plan
 
 Nothing was found that can be fixed by editing a list. The two buffer-atomic gaps are gated behind
