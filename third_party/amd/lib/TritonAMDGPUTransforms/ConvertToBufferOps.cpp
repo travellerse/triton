@@ -60,21 +60,23 @@ bool isSplatOneConstTensor(const Value v) {
 
 // RDNA2 (gfx103x) can encode integer buffer atomic RMW instructions, but the
 // buffer path sends any lane whose predicate is false to an out-of-range offset
-// (0x8000_0000) and relies on the descriptor's range check to drop it. The RDNA2
-// guide does say buffer atomics are range-checked -- all-or-nothing per
+// (0x8000_0000) and relies on the descriptor's range check to drop it. The
+// RDNA2 guide does say buffer atomics are range-checked -- all-or-nothing per
 // instruction (section 8.1, Table 35 note 3) -- yet 0x8000_0000 only exceeds
 // numRecords = 0x7FFF_FFFE under an *unsigned* compare, and the guide does not
-// state which compare the hardware uses. Until a device probe settles that, only
-// lanes that are provably active may take the buffer path: no user mask and no
-// redundant threads in the value layout. Everything else keeps the generic atomic
-// lowering, which on RDNA2 CAS-expands bitwise, unsigned and signed min/max.
+// state which compare the hardware uses. Until a device probe settles that,
+// only lanes that are provably active may take the buffer path: no user mask
+// and no redundant threads in the value layout. Everything else keeps the
+// generic atomic lowering, which on RDNA2 CAS-expands bitwise, unsigned and
+// signed min/max.
 //
-// Float min/max are deliberately not in the list even though BUFFER_ATOMIC_FMIN/FMAX select
-// (llc -mcpu=gfx1030 emits buffer_atomic_fmin): tl.atomic_max/min on floats does not arrive as
-// RMWOp::MIN/MAX on a float -- the frontend bitcasts and uses the signed/unsigned integer ordering
-// trick instead -- so the hardware ops would have to be reached through a semantics question
-// (NaN and +-0 behaviour) that this change does not need and has not answered.
-// Evidence: docs/rdna2/buffer-atomic-capability-audit-rdna2.md and
+// Float min/max are deliberately not in the list even though
+// BUFFER_ATOMIC_FMIN/FMAX select (llc -mcpu=gfx1030 emits buffer_atomic_fmin):
+// tl.atomic_max/min on floats does not arrive as RMWOp::MIN/MAX on a float --
+// the frontend bitcasts and uses the signed/unsigned integer ordering trick
+// instead -- so the hardware ops would have to be reached through a semantics
+// question (NaN and +-0 behaviour) that this change does not need and has not
+// answered. Evidence: docs/rdna2/buffer-atomic-capability-audit-rdna2.md and
 // docs/rdna2/m1-implementation-report.md section 24.
 static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
                                          RMWOp rmwOp, Type elemTy, Value mask,
@@ -443,11 +445,12 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
     }
     LDBG("RMW supported type");
 
-    // The RDNA2 integer subset is decided once, here, because the signed min/max refusal below and
-    // the target-scoped check in step 7 have to agree about it.
-    const bool rdna2IntSubset = supportsRdna2BufferAtomicRMW(
-        targetFeatures, atomicRmwOp, checkType, op.getMask(),
-        op.getVal().getType());
+    // The RDNA2 integer subset is decided once, here, because the signed
+    // min/max refusal below and the target-scoped check in step 7 have to agree
+    // about it.
+    const bool rdna2IntSubset =
+        supportsRdna2BufferAtomicRMW(targetFeatures, atomicRmwOp, checkType,
+                                     op.getMask(), op.getVal().getType());
 
     if (atomicRmwOp == RMWOp::FADD &&
         !targetFeatures.supportsBufferAtomicFadd(checkType)) {
@@ -737,8 +740,8 @@ struct TritonAMDGPUConvertToBufferOpsPass
     // generic tt.atomic_rmw path in place. Widening supportsBufferAtomicRMW()
     // itself would instead route fadd and f64 exchange into an instruction the
     // pinned backend cannot select.
-    if (this->allowBufferAtomics && (targetFeatures.supportsBufferAtomicRMW() ||
-                                     targetFeatures.isRDNA2()))
+    if (this->allowBufferAtomics &&
+        (targetFeatures.supportsBufferAtomicRMW() || targetFeatures.isRDNA2()))
       patterns.add<ConvertTritonAtomicRMWOpToBufferAtomicRMW>(
           context, assumptions, axisInfoAnalysis, solver, targetFeatures,
           this->analyzeSmallTensorOfst);
