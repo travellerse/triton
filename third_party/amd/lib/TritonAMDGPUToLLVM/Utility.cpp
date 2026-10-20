@@ -597,10 +597,12 @@ getCtrlBitsForCacheModifierOn_CDNA3_CDNA4(triton::CacheModifier cm,
 // Two rows are best-effort, and both limits are ISA facts rather than choices:
 //   .cv collapses onto .cg because no load encoding can bypass or invalidate an L2 line, and only
 //   the cache-policy half is delivered. The ordering half is NOT: LLVM's volatile handling keys off
-//   the memory operand's volatile flag, which an aux value does not set. Measured on gfx1030, a .cv
-//   buffer load emits "glc dlc" with nothing but the ordinary vmcnt wait Triton inserts for every
-//   load, and tl.load(..., volatile=True) never reaches this path (it lowers to a global_load
-//   instead). So .cv here means "do not reuse the near caches", not "volatile read".
+//   the memory operand's volatile flag, which an aux value does not set. Pinned in
+//   test/LLVMIR/rdna2-buffer-cache-policy.ll (seq_a0 vs seq_a5: identical instruction order and
+//   identical s_waitcnt vmcnt numbering, only the glc/dlc fields differ) on gfx1030 and gfx1031, and
+//   tl.load(..., volatile=True) never reaches this path -- ConvertTritonLoadToBufferLoad refuses it,
+//   so it lowers to a global_load instead. So .cv here means "do not reuse the near caches", not
+//   "volatile read".
 //   .wt becomes L2 bypass through DLC=1 alone, which is write-*around*: writes skip L2, but GFX10
 //   has no write-through-to-system-memory control for stores.
 //
