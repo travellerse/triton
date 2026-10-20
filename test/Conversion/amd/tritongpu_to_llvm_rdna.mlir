@@ -2,6 +2,9 @@
 // RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1170 --convert-builtin-func-to-llvm | FileCheck %s
 // RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1030 --convert-builtin-func-to-llvm | FileCheck %s
 // RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1031 --convert-builtin-func-to-llvm | FileCheck %s
+// RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1030 --convert-builtin-func-to-llvm | FileCheck %s --check-prefix=FP8-SW
+// RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1031 --convert-builtin-func-to-llvm | FileCheck %s --check-prefix=FP8-SW
+// RUN: triton-opt %s -split-input-file --allocate-shared-memory --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1100 --convert-builtin-func-to-llvm | FileCheck %s --check-prefix=FP8-SW
 
 #blocked3 = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [1], order = [0]}>
 module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.threads-per-warp" = 32 : i32} {
@@ -97,5 +100,62 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.thr
     // CHECK-COUNT-64: llvm.call_intrinsic "llvm.amdgcn.fdot2"
     %0 = tt.dot %a, %b, %acc, inputPrecision = ieee : tensor<16x16xf16, #ttg.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<16x16xf16, #ttg.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<16x16xf32, #blocked>
     tt.return %0 : tensor<16x16xf32, #blocked>
+  }
+}
+
+// -----
+
+#scaled = #ttg.blocked<{sizePerThread = [1, 1], threadsPerWarp = [1, 32], warpsPerCTA = [1, 4], order = [1, 0]}>
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.threads-per-warp" = 32 : i32} {
+  // E4M3FN encodes NaN as 0x7F (and 0xFF with the sign set), but the software upcast's bias
+  // multiply would turn those patterns into finite +/-480. The lowering must select a NaN first:
+  // the plain fp8->f16 software path in this backend already does it
+  // (Fp8E4M3fnToFp16OneValue selects 0x7E00 for the same byte), so the scaled path must not turn
+  // the encoding into a number.
+  // All four RUN lines take the software path (neither RDNA2 nor RDNA3 has a hardware scaled
+  // upcast), hence one shared CHECK.
+  // CHECK-LABEL: scaled_upcast_fp8_sw_nan
+  // CHECK: %[[ABS:.+]] = llvm.and %{{.+}}, %{{.+}} : i8
+  // CHECK: %[[ISNAN:.+]] = llvm.icmp "eq" %[[ABS]], %{{.+}} : i8
+  // CHECK: llvm.select %[[ISNAN]], %{{.+}}, %{{.+}} : i1, f32
+  tt.func @scaled_upcast_fp8_sw_nan(%in: tensor<32x128xf8E4M3FN, #scaled>, %scale: tensor<32x128xbf16, #scaled>, %out: tensor<32x128x!tt.ptr<bf16>, #scaled>) {
+    %0 = amdg.scaled_upcast_fp8 %in scale %scale : tensor<32x128xf8E4M3FN, #scaled>, tensor<32x128xbf16, #scaled> -> tensor<32x128xbf16, #scaled>
+    tt.store %out, %0 : tensor<32x128x!tt.ptr<bf16>, #scaled>
+    tt.return
+  }
+}
+
+// -----
+
+#fp8blocked = #ttg.blocked<{sizePerThread = [1, 1], threadsPerWarp = [4, 8], warpsPerCTA = [4, 1], order = [1, 0]}>
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.threads-per-warp" = 32 : i32} {
+  // The plain fp8->bf16 cast is another route where a NaN encoding must not become a number.
+  // E4M3FN 0x7F/0xFF and E5M2 0x7D..0x7F are the NaN patterns; the software bit trick maps them
+  // to finite values, so the lowering selects a canonical bf16 NaN. The FP8-SW prefix covers the
+  // three RUN lines whose families take this software path (gfx1030/1031/1100); gfx1170 has the
+  // unscaled hardware convert and is deliberately not asserted here.
+  // FP8-SW-LABEL: fp8_e4m3_bf16_sw_nan
+  // FP8-SW: %[[ABS:.+]] = llvm.and %{{.+}}, %{{.+}} : i8
+  // FP8-SW: %[[ISNAN:.+]] = llvm.icmp "eq" %[[ABS]], %{{.+}} : i8
+  // FP8-SW: llvm.select %[[ISNAN]], %{{.+}}, %{{.+}} : i1, bf16
+  tt.func @fp8_e4m3_bf16_sw_nan(%in: tensor<32x64xf8E4M3FN, #fp8blocked>, %out: tensor<32x64x!tt.ptr<bf16>, #fp8blocked>) {
+    %0 = tt.fp_to_fp %in : tensor<32x64xf8E4M3FN, #fp8blocked> -> tensor<32x64xbf16, #fp8blocked>
+    tt.store %out, %0 : tensor<32x64x!tt.ptr<bf16>, #fp8blocked>
+    tt.return
+  }
+
+  // E5M2 has no dedicated NaN bit pattern: magnitudes 0x7D..0x7F are NaNs and 0x7C is infinity.
+  // The NaN guard is an unsigned "greater than 0x7C" on the sign-cleared byte, and the infinity
+  // guard is an equality with 0x7C (0x7C alone would otherwise come out as 65536).
+  // FP8-SW-LABEL: fp8_e5m2_bf16_sw_nan
+  // FP8-SW: %[[ABS5:.+]] = llvm.and %{{.+}}, %{{.+}} : i8
+  // FP8-SW: %[[NAN5:.+]] = llvm.icmp "ugt" %[[ABS5]], %{{.+}} : i8
+  // FP8-SW: llvm.select %[[NAN5]], %{{.+}}, %{{.+}} : i1, bf16
+  // FP8-SW: %[[INF5:.+]] = llvm.icmp "eq" %[[ABS5]], %{{.+}} : i8
+  // FP8-SW: llvm.select %[[INF5]], %{{.+}}, %{{.+}} : i1, bf16
+  tt.func @fp8_e5m2_bf16_sw_nan(%in: tensor<32x64xf8E5M2, #fp8blocked>, %out: tensor<32x64x!tt.ptr<bf16>, #fp8blocked>) {
+    %0 = tt.fp_to_fp %in : tensor<32x64xf8E5M2, #fp8blocked> -> tensor<32x64xbf16, #fp8blocked>
+    tt.store %out, %0 : tensor<32x64x!tt.ptr<bf16>, #fp8blocked>
+    tt.return
   }
 }

@@ -1212,6 +1212,12 @@ Value convertF8ToF32_SW(RewriterBase &rewriter, Location loc, Value fp8Val,
     Value absVal = b.and_(fp8Val, b.i8_val(0x7F));
     Value vi32 = b.shl(b.zext(i32_ty, absVal), b.i32_val(20));
     Value rawF32 = b.fmul(b.bitcast(vi32, f32_ty), b.f32_val(0x1p120f));
+    // 0x7F (and its negative 0xFF) is E4M3FN's NaN encoding, but the bias
+    // multiply turns it into a finite +/-480. Preserve NaN here, matching the
+    // plain fp8->f16 software path in this backend (Fp8E4M3fnToFp16OneValue
+    // selects 0x7E00 for the same byte).
+    Value isNan = b.icmp_eq(absVal, b.i8_val(0x7F));
+    rawF32 = b.select(isNan, b.bitcast(b.i32_val(0x7FC00000), f32_ty), rawF32);
     Value signBit =
         b.shl(b.and_(b.zext(i32_ty, fp8Val), b.i32_val(0x80)), b.i32_val(24));
     return b.bitcast(b.or_(b.bitcast(rawF32, i32_ty), signBit), f32_ty);
