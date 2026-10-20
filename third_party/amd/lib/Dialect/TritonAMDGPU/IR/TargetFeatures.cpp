@@ -277,6 +277,14 @@ bool TargetFeatures::supportsBufferAtomicRMW() const {
 
 bool TargetFeatures::supportsBufferAtomicFadd(Type elementType) const {
   auto isaFamily = getISAFamily();
+  // GFX10's MUBUF atomic opcode table (RDNA 2 ISA Reference Guide, 12.14) has
+  // FCMPSWAP, FMIN and FMAX but no FADD at all, so no element type qualifies.
+  // Today callers reach this only behind supportsBufferAtomicRMW(), which
+  // excludes RDNA2; the explicit answer is what keeps a narrower, per-op enablement
+  // from inheriting a "yes" it cannot select (the pass aborts on fadd when the family
+  // predicate is widened -- see docs/rdna2/buffer-atomic-capability-audit-rdna2.md).
+  if (isaFamily == ISAFamily::RDNA2)
+    return false;
   if (isaFamily == ISAFamily::CDNA3 && elementType.isBF16())
     return false;
   if (isaFamily == ISAFamily::RDNA3 && !elementType.isF32())
