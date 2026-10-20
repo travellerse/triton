@@ -189,6 +189,9 @@ def TritonAMDGPUConvertToBufferOps : Pass<"tritonamdgpu-convert-buffer-ops", "ml
     Option<"allowBufferAtomics", "allow-buffer-atomics",
            "bool", /*default*/"true",
            "Allow buffer atomic operations when the hardware supports it.">,
+    Option<"allowMaskedBufferAtomics", "allow-masked-buffer-atomics",
+           "bool", /*default*/"true",
+           "Let RDNA2 buffer atomics take lanes whose predicate is false. Such a lane is sent to byte offset 0x8000_0000, which the descriptor's range check (numRecords = 0x7FFF_FFFE) drops under the unsigned compare the device probe measured. Set false to keep masked and redundant-lane atomics on the generic path.">,
     Option<"analyzeSmallTensorOfst", "analyze-small-tensor-ofst",
           "bool", /*default=*/"false",
            "Whether to still analyze index range for tensors whose base has "

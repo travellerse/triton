@@ -1,18 +1,21 @@
 // RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1030" | FileCheck %s --check-prefix=RDNA2
 // RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1031" | FileCheck %s --check-prefix=RDNA2
+// RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1030 allow-masked-buffer-atomics=false" | FileCheck %s --check-prefix=RDNA2-CONSERVATIVE
 // RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1100" | FileCheck %s --check-prefix=RDNA3
 // RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx942" | FileCheck %s --check-prefix=CDNA3
 // RUN: triton-opt %s --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx90a" | FileCheck %s --check-prefix=GENERIC
 
 // Operation- and type-scoped RDNA2 buffer atomic RMW (M1M candidate). gfx103x has no
 // supportsBufferAtomicRMW() entry; instead the rewrite registers for RDNA2 and only accepts
-// integer and/or/xor/umin/umax and signed min/max at 32 and 64 bits when every lane is provably
-// active. The reason for
-// the lane requirement is arithmetic, not missing documentation: a masked lane is sent to offset
-// 0x8000_0000 and the RDNA2 guide (8.1, Table 35 note 3) says buffer atomics are range-checked
-// all-or-nothing, but that offset only exceeds numRecords = 0x7FFF_FFFE under an unsigned compare,
-// which the guide does not state -- so until a device probe settles it, no masked lane may take the
-// buffer path. RDNA3 and CDNA3 are the gate-open controls, gfx90a the gate-closed control.
+// integer and/or/xor/umin/umax and signed min/max at 32 and 64 bits. A masked or redundant
+// lane is sent to offset 0x8000_0000 and dropped by the descriptor's range check
+// (numRecords = 0x7FFF_FFFE). The guide states that check (8.1, Table 35 note 3; OOB_SELECT=3
+// compares offset + payload against numRecords) without its signedness, so
+// docs/rdna2/conformance/rdna2_masked_buffer_atomic_probe.py measured it on the card: the
+// sentinel does not reach base + 2 GiB for either predicate source. Inactive lanes therefore
+// take the buffer path by default, and RDNA2-CONSERVATIVE pins the opt-out
+// (`allow-masked-buffer-atomics=false`) that keeps them on the generic path.
+// RDNA3 and CDNA3 are the gate-open controls, gfx90a the gate-closed control.
 // `add`, `sub` and `exch` stay on the generic path on purpose (they are native there too, and the
 // pinned per-target behaviour is kept in amd-convert-buffer-ops-atomic-rmw.mlir). Signed min/max are
 // an exception to the control symmetry: RDNA2 takes them, RDNA3/CDNA3 still refuse them in this pass.
@@ -291,6 +294,7 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
 
   // A user mask makes inactive lanes depend on descriptor bounds suppression.
   // RDNA2-LABEL: @and_i32_masked
+  // RDNA2-CONSERVATIVE-LABEL: @and_i32_masked
   // RDNA3-LABEL: @and_i32_masked
   // CDNA3-LABEL: @and_i32_masked
   // GENERIC-LABEL: @and_i32_masked
@@ -298,8 +302,9 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
     %offs = tt.make_range {end = 1024 : i32, start = 0 : i32} : tensor<1024xi32, #blocked>
     %addrs = tt.addptr %base, %offs : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
-    // RDNA2-NOT: amdg.buffer_atomic_rmw
-    // RDNA2: tt.atomic_rmw and
+    // RDNA2: amdg.buffer_atomic_rmw and
+    // RDNA2-CONSERVATIVE-NOT: amdg.buffer_atomic_rmw
+    // RDNA2-CONSERVATIVE: tt.atomic_rmw and
     // RDNA3: amdg.buffer_atomic_rmw and
     // CDNA3: amdg.buffer_atomic_rmw and
     %res = tt.atomic_rmw and, acq_rel, gpu, %addrs, %values, %mask : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>, tensor<1024xi1, #blocked>) -> tensor<1024xi32, #blocked>
@@ -308,6 +313,7 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
 
   // Same for a masked unsigned min, the other shape the runtime path would take.
   // RDNA2-LABEL: @umin_i32_masked
+  // RDNA2-CONSERVATIVE-LABEL: @umin_i32_masked
   // RDNA3-LABEL: @umin_i32_masked
   // CDNA3-LABEL: @umin_i32_masked
   // GENERIC-LABEL: @umin_i32_masked
@@ -315,8 +321,9 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
     %offs = tt.make_range {end = 1024 : i32, start = 0 : i32} : tensor<1024xi32, #blocked>
     %addrs = tt.addptr %base, %offs : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
-    // RDNA2-NOT: amdg.buffer_atomic_rmw
-    // RDNA2: tt.atomic_rmw umin
+    // RDNA2: amdg.buffer_atomic_rmw umin
+    // RDNA2-CONSERVATIVE-NOT: amdg.buffer_atomic_rmw
+    // RDNA2-CONSERVATIVE: tt.atomic_rmw umin
     // RDNA3: amdg.buffer_atomic_rmw umin
     // CDNA3: amdg.buffer_atomic_rmw umin
     %res = tt.atomic_rmw umin, acq_rel, gpu, %addrs, %values, %mask : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>, tensor<1024xi1, #blocked>) -> tensor<1024xi32, #blocked>
@@ -324,9 +331,11 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
   }
 
   // Redundant lanes: four elements spread over a 4-warp CTA leaves most threads with no element
-  // of their own, so the emitter predicates lanes off and again needs the unverified
-  // suppression. Gate-open targets do not check this; the RDNA2 subset is deliberately stricter.
+  // of their own, so the emitter predicates lanes off and needs the same suppression the mask
+  // arm exercises. Gate-open targets do not check this; the conservative RDNA2 mode still
+  // refuses it.
   // RDNA2-LABEL: @and_i32_redundant
+  // RDNA2-CONSERVATIVE-LABEL: @and_i32_redundant
   // RDNA3-LABEL: @and_i32_redundant
   // CDNA3-LABEL: @and_i32_redundant
   // GENERIC-LABEL: @and_i32_redundant
@@ -334,8 +343,9 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<4x!tt.ptr<i32>, #blocked_small>
     %offs = tt.make_range {end = 4 : i32, start = 0 : i32} : tensor<4xi32, #blocked_small>
     %addrs = tt.addptr %base, %offs : tensor<4x!tt.ptr<i32>, #blocked_small>, tensor<4xi32, #blocked_small>
-    // RDNA2-NOT: amdg.buffer_atomic_rmw
-    // RDNA2: tt.atomic_rmw and
+    // RDNA2: amdg.buffer_atomic_rmw and
+    // RDNA2-CONSERVATIVE-NOT: amdg.buffer_atomic_rmw
+    // RDNA2-CONSERVATIVE: tt.atomic_rmw and
     // RDNA3: amdg.buffer_atomic_rmw and
     // CDNA3: amdg.buffer_atomic_rmw and
     %res = tt.atomic_rmw and, acq_rel, gpu, %addrs, %values : (tensor<4x!tt.ptr<i32>, #blocked_small>, tensor<4xi32, #blocked_small>) -> tensor<4xi32, #blocked_small>
@@ -344,12 +354,14 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
 
   // A splat pointer has no addptr to describe, so no target reaches the buffer rewrite.
   // RDNA2-LABEL: @and_i32_splat_ptr
+  // RDNA2-CONSERVATIVE-LABEL: @and_i32_splat_ptr
   // RDNA3-LABEL: @and_i32_splat_ptr
   // CDNA3-LABEL: @and_i32_splat_ptr
   // GENERIC-LABEL: @and_i32_splat_ptr
   tt.func public @and_i32_splat_ptr(%ptr: !tt.ptr<i32> {tt.divisibility = 16 : i32}, %values: tensor<1024xi32, #blocked>) {
     %base = tt.splat %ptr : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
     // RDNA2-NOT: amdg.buffer_atomic_rmw
+    // RDNA2-CONSERVATIVE-NOT: amdg.buffer_atomic_rmw
     // RDNA3-NOT: amdg.buffer_atomic_rmw
     // CDNA3-NOT: amdg.buffer_atomic_rmw
     // GENERIC-NOT: amdg.buffer_atomic_rmw

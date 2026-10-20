@@ -60,15 +60,19 @@ bool isSplatOneConstTensor(const Value v) {
 
 // RDNA2 (gfx103x) can encode integer buffer atomic RMW instructions, but the
 // buffer path sends any lane whose predicate is false to an out-of-range offset
-// (0x8000_0000) and relies on the descriptor's range check to drop it. The
-// RDNA2 guide does say buffer atomics are range-checked -- all-or-nothing per
-// instruction (section 8.1, Table 35 note 3) -- yet 0x8000_0000 only exceeds
-// numRecords = 0x7FFF_FFFE under an *unsigned* compare, and the guide does not
-// state which compare the hardware uses. Until a device probe settles that,
-// only lanes that are provably active may take the buffer path: no user mask
-// and no redundant threads in the value layout. Everything else keeps the
-// generic atomic lowering, which on RDNA2 CAS-expands bitwise, unsigned and
-// signed min/max.
+// (0x8000_0000) and relies on the descriptor's range check to drop it. The same
+// mechanism already carries every masked buffer load and store on this target.
+// The RDNA2 guide says buffer atomics are range-checked -- all-or-nothing per
+// instruction (section 8.1, Table 35 note 3), and OOB_SELECT=3 compares
+// offset + payload against numRecords (numRecords = 0x7FFF_FFFE here). The
+// guide does not state the compare's signedness, so the device probe in
+// docs/rdna2/conformance/rdna2_masked_buffer_atomic_probe.py measured it: a
+// lane sent to 0x8000_0000 does not reach base + 2 GiB, for both a user mask
+// and a redundant-lane predicate, while active lanes in the same instruction
+// land. Inactive lanes therefore take the buffer path by default. Setting
+// allowMaskedBufferAtomics=false (AMDGCN_ALLOW_MASKED_BUFFER_ATOMICS=0)
+// restores the conservative path, which keeps the generic lowering that on
+// RDNA2 CAS-expands bitwise, unsigned and signed min/max.
 //
 // Float min/max are deliberately not in the list even though
 // BUFFER_ATOMIC_FMIN/FMAX select (llc -mcpu=gfx1030 emits buffer_atomic_fmin):
@@ -80,7 +84,7 @@ bool isSplatOneConstTensor(const Value v) {
 // docs/rdna2/m1-implementation-report.md section 24.
 static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
                                          RMWOp rmwOp, Type elemTy, Value mask,
-                                         Type valTy) {
+                                         Type valTy, bool allowMasked) {
   if (!targetFeatures.isRDNA2())
     return false;
   if (!llvm::is_contained({RMWOp::AND, RMWOp::OR, RMWOp::XOR, RMWOp::UMAX,
@@ -89,16 +93,18 @@ static bool supportsRdna2BufferAtomicRMW(const TargetFeatures &targetFeatures,
     return false;
   if (!elemTy.isInteger(32) && !elemTy.isInteger(64))
     return false;
-  if (mask && !isSplatOneConstTensor(mask))
+  if (!allowMasked && mask && !isSplatOneConstTensor(mask))
     return false;
 
   auto tensorTy = dyn_cast<RankedTensorType>(valTy);
   if (!tensorTy || !tensorTy.getEncoding())
     return false;
-  for (const auto &freeVar :
-       ttg::toLinearLayout(tensorTy).getFreeVariableMasks()) {
-    if (freeVar.second != 0)
-      return false;
+  if (!allowMasked) {
+    for (const auto &freeVar :
+         ttg::toLinearLayout(tensorTy).getFreeVariableMasks()) {
+      if (freeVar.second != 0)
+        return false;
+    }
   }
   return true;
 }
@@ -389,11 +395,13 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
       DenseMap<Value, SetVector<Operation *>> &assumptions,
       ModuleAxisInfoAnalysis &axisAnalysisPass,
       std::shared_ptr<DataFlowSolver> solver,
-      const TargetFeatures &targetFeatures, bool analyzeSmallTensorOfst_)
+      const TargetFeatures &targetFeatures, bool analyzeSmallTensorOfst_,
+      bool allowMaskedBufferAtomics_)
       : mlir::OpRewritePattern<triton::AtomicRMWOp>(context),
         assumptions(assumptions), axisAnalysisPass(axisAnalysisPass),
         solver(std::move(solver)), targetFeatures(targetFeatures),
-        analyzeSmallTensorOfst(analyzeSmallTensorOfst_) {}
+        analyzeSmallTensorOfst(analyzeSmallTensorOfst_),
+        allowMaskedBufferAtomics(allowMaskedBufferAtomics_) {}
 
   mlir::LogicalResult
   matchAndRewrite(triton::AtomicRMWOp op,
@@ -448,9 +456,9 @@ struct ConvertTritonAtomicRMWOpToBufferAtomicRMW
     // The RDNA2 integer subset is decided once, here, because the signed
     // min/max refusal below and the target-scoped check in step 7 have to agree
     // about it.
-    const bool rdna2IntSubset =
-        supportsRdna2BufferAtomicRMW(targetFeatures, atomicRmwOp, checkType,
-                                     op.getMask(), op.getVal().getType());
+    const bool rdna2IntSubset = supportsRdna2BufferAtomicRMW(
+        targetFeatures, atomicRmwOp, checkType, op.getMask(),
+        op.getVal().getType(), allowMaskedBufferAtomics);
 
     if (atomicRmwOp == RMWOp::FADD &&
         !targetFeatures.supportsBufferAtomicFadd(checkType)) {
@@ -563,6 +571,7 @@ private:
   std::shared_ptr<DataFlowSolver> solver;
   TargetFeatures targetFeatures;
   bool analyzeSmallTensorOfst;
+  bool allowMaskedBufferAtomics;
 };
 
 template <typename SourceOp>
@@ -744,7 +753,7 @@ struct TritonAMDGPUConvertToBufferOpsPass
         (targetFeatures.supportsBufferAtomicRMW() || targetFeatures.isRDNA2()))
       patterns.add<ConvertTritonAtomicRMWOpToBufferAtomicRMW>(
           context, assumptions, axisInfoAnalysis, solver, targetFeatures,
-          this->analyzeSmallTensorOfst);
+          this->analyzeSmallTensorOfst, this->allowMaskedBufferAtomics);
     patterns.add<ConvertTritonAtomicCASOpToBufferAtomicCAS>(
         context, assumptions, axisInfoAnalysis, solver,
         this->analyzeSmallTensorOfst);

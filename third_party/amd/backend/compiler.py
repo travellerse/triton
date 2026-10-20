@@ -489,6 +489,7 @@ class HIPBackend(BaseBackend):
                 pm,
                 options.arch,
                 knobs.amd.use_buffer_atomics,
+                knobs.amd.allow_masked_buffer_atomics,
                 knobs.amd.buffer_ops_analyze_small_tensor_range,
             )
             amd.passes.ttgpuir.add_optimize_buffer_op_ptr(pm)
