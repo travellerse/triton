@@ -762,6 +762,9 @@ std::pair<mlir::triton::gpu::LocalMemOpTile, mlir::triton::gpu::LocalMemOpTile>
 TargetInfo::getSharedLdStTiles(int32_t vecBitwidth) const {
   switch (getISAFamily()) {
   case ISAFamily::CDNA3:
+  // GFX10.3 shares the RDNA3 128-bit LDS access shape; upstream granted RDNA2 this
+  // tile before #12042 dropped the family entirely.
+  case ISAFamily::RDNA2:
   case ISAFamily::RDNA3:
   case ISAFamily::RDNA4m:
     if (vecBitwidth == 128)
