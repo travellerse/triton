@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 import triton
+from triton import _internal_testing
 from triton._utils import is_power_of_two, validate_block_shape
 from triton.runtime import driver
 from triton.testing import get_dram_gbps
@@ -83,3 +84,39 @@ def test_get_dram_gbps_memory_data_rate(monkeypatch, backend, arch, properties, 
     active = SimpleNamespace(utils=utils, get_current_target=lambda: target)
     monkeypatch.setattr(driver, "_active", active)
     assert get_dram_gbps(0) == expected
+
+
+@pytest.mark.parametrize("backend, arch, expected", [
+    ("hip", "gfx1030", True),
+    ("hip", "gfx1031", True),
+    ("hip", "gfx1036", True),
+    ("hip", "gfx1012", False),   # RDNA1 is not supported by this backend
+    ("hip", "gfx1100", False),
+    ("hip", "gfx1151", False),
+    ("hip", "gfx1201", False),
+    ("hip", "gfx1250", False),
+    ("hip", "gfx90a", False),
+    ("hip", "gfx942", False),
+    ("hip", "gfx950", False),
+    ("cuda", "gfx1030", False),
+])
+def test_is_hip_rdna2_recognizes_gfx103_only(monkeypatch, backend, arch, expected):
+    # RDNA2 is the GFX10.3 stepping range, which is exactly what computeISAFamily() maps to
+    # ISAFamily::RDNA2 (major == 10 && minor == 3).
+    monkeypatch.setattr(_internal_testing, "get_current_target",
+                        lambda: SimpleNamespace(backend=backend, arch=arch))
+    assert _internal_testing.is_hip_rdna2() is expected
+
+
+def test_is_hip_rdna2_does_not_imply_other_family_gates(monkeypatch):
+    # is_hip_rdna() and the CDNA predicates drive RDNA3/RDNA4- and CDNA-only expectations
+    # (WMMA layout versions, warp specialization, the triton-to-gluon translator skip).
+    # Recognising RDNA2 must not move a gfx103x device into any of those groups.
+    monkeypatch.setattr(_internal_testing, "get_current_target",
+                        lambda: SimpleNamespace(backend="hip", arch="gfx1031"))
+    assert _internal_testing.is_hip()
+    assert _internal_testing.is_hip_rdna2()
+    assert not _internal_testing.is_hip_rdna()
+    assert not _internal_testing.is_hip_rdna3()
+    assert not _internal_testing.is_hip_cdna()
+    assert not _internal_testing.is_hip_cdna3_or_newer()
