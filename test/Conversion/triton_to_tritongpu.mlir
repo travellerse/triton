@@ -225,3 +225,18 @@ tt.func @call_into_dot(%b: tensor<32x128xf16>) {
   %0 = tt.dot %a, %b, %c : tensor<128x32xf16> * tensor<32x128xf16> -> tensor<128x128xf32>
   tt.return
 }
+
+// -----
+
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 2 : i32} {
+  // A scaled dot is tiled for the FMA path exactly like a plain dot: 32x32 with 2 warps is 16
+  // elements per thread, hence sizePerThread 4x4. Matrix-unit targets overwrite this encoding
+  // later, while AMD's software decomposition keeps it -- and the generic 1x1 default there costs
+  // ~1 KB of scratch per lane at 32x32x64 with 4 warps.
+  // CHECK: #[[ENC:[a-zA-Z0-9_]+]] = #ttg.blocked<{sizePerThread = [4, 4],
+  // CHECK: tt.dot_scaled {{.*}} -> tensor<32x32xf32, #[[ENC]]>
+  tt.func @dot_scaled_fma_layout(%a: tensor<32x64xf8E4M3FN>, %b: tensor<64x32xf8E4M3FN>, %sa: tensor<32x2xi8>, %sb: tensor<32x2xi8>, %c: tensor<32x32xf32>) -> tensor<32x32xf32> {
+    %0 = tt.dot_scaled %a scale %sa, %b scale %sb, %c lhs = e4m3 rhs = e4m3 {fastMath = false} : tensor<32x64xf8E4M3FN>, tensor<32x2xi8> * tensor<64x32xf8E4M3FN>, tensor<32x2xi8> -> tensor<32x32xf32>
+    tt.return %0 : tensor<32x32xf32>
+  }
+}
