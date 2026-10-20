@@ -70,6 +70,19 @@ Triton MLIR Dialects and Ops
 
    dialects/dialects
 
+AMD GPUs
+--------
+
+- :doc:`RDNA2 (gfx103x) <rdna2/index>` — what the backend does on GFX10.3, what the silicon
+  cannot do, and the throughput that follows from it.
+
+.. toctree::
+   :maxdepth: 1
+   :caption: AMD GPUs
+   :hidden:
+
+   rdna2/index
+
 Going Further
 -------------
 
