@@ -78,3 +78,24 @@ tt.func private @bf16_mulf(%arg0: tensor<64xbf16, #blocked>, %arg1: tensor<64xbf
   tt.return %0 : tensor<64xbf16, #blocked>
 }
 }
+
+// -----
+
+#blocked = #ttg.blocked<{sizePerThread = [1, 1], threadsPerWarp = [4, 8], warpsPerCTA = [1, 1], order = [1, 0]}>
+module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 1 : i32, "ttg.threads-per-warp" = 32 : i32} {
+  // RDNA2 has neither MFMA nor WMMA, so a dot whose operands are dot_op-over-blocked lowers to
+  // the packed 2-element half-precision dot intrinsic. Nothing pinned this for RDNA2 before: the
+  // only fdot2 assertion in the suite was on the gfx942 (CDNA) arm of tritongpu_to_llvm.mlir, so
+  // the fp16 matmul path this card depends on could regress silently.
+  // All four RUN lines (gfx1030/1031/1100/1170) take this path, hence one shared CHECK.
+  // 64 = 8 elements per thread (16x16 over 32 lanes at sizePerThread [1,1]) x 8 f16 pairs along K.
+  // CHECK-COUNT is a lower bound, which is the direction that matters here: if the FMA path stops
+  // emitting the packed dot (or silently falls back to scalar mul/add), the count collapses and
+  // this fails. Verified by mutation: halving K to 8 drops emission to 32 and the case fails.
+  // CHECK-LABEL: dot_fp16_fma
+  tt.func private @dot_fp16_fma(%a: tensor<16x16xf16, #ttg.dot_op<{opIdx = 0, parent = #blocked}>>, %b: tensor<16x16xf16, #ttg.dot_op<{opIdx = 1, parent = #blocked}>>, %acc: tensor<16x16xf32, #blocked>) -> tensor<16x16xf32, #blocked> {
+    // CHECK-COUNT-64: llvm.call_intrinsic "llvm.amdgcn.fdot2"
+    %0 = tt.dot %a, %b, %acc, inputPrecision = ieee : tensor<16x16xf16, #ttg.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<16x16xf16, #ttg.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<16x16xf32, #blocked>
+    tt.return %0 : tensor<16x16xf32, #blocked>
+  }
+}

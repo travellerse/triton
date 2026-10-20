@@ -1,6 +1,8 @@
 // RUN: triton-opt %s --split-input-file --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1170 | FileCheck --check-prefixes=COMMON,HWCVT %s
 // RUN: triton-opt %s --split-input-file --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1200 | FileCheck --check-prefixes=COMMON,HWCVT %s
 // RUN: triton-opt %s --split-input-file --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1100 | FileCheck --check-prefixes=COMMON,NOHW %s
+// RUN: triton-opt %s --split-input-file --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1030 | FileCheck --check-prefixes=COMMON,NOHW %s
+// RUN: triton-opt %s --split-input-file --convert-triton-amdgpu-to-llvm=gfx-arch=gfx1031 | FileCheck --check-prefixes=COMMON,NOHW %s
 
 // OCP fp8 (f8E4M3FN / f8E5M2) casts: hardware cvt vs. software fallback.
 // HWCVT (gfx1170, gfx1200) uses the unscaled cvt ops for downcasts and for
