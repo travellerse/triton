@@ -1671,6 +1671,17 @@ struct TritonAMDGPUAccelerateMatmulPass
       mfmaPatterns.add<BlockedToWMMA>(context, wmmaVersion,
                                       unsupportedWmmaFeatures, /*benefit=*/2);
       break;
+    case ISAFamily::RDNA2:
+      // This family has no MFMA or WMMA instruction, so only the software
+      // decomposition is registered: it turns the scaled dot into explicit
+      // upcast plus an ordinary tt.dot, which the second phase of this pass and
+      // then the FMA lowering already handle. Without this arm a tl.dot_scaled
+      // kernel reached ConvertTritonGPUToLLVM with the op intact and aborted
+      // the process on "Unsupported DotScaleOp found when converting TritonGPU
+      // to LLVM".
+      mfmaPatterns.add<DecomposeAMDScaledBlocked>(context, targetFeatures,
+                                                  /*benefit=*/3);
+      break;
     default:
       break;
     }
