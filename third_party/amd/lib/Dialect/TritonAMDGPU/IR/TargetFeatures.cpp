@@ -132,6 +132,10 @@ bool TargetFeatures::isCDNA5() const {
   return getISAFamily() == ISAFamily::CDNA5;
 }
 
+bool TargetFeatures::isRDNA2() const {
+  return getISAFamily() == ISAFamily::RDNA2;
+}
+
 bool TargetFeatures::isGFX1250Strict() const {
   return isCDNA5() && arch != baseArch;
 }

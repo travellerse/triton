@@ -1,9 +1,17 @@
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx942" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx950" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1100" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1170" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1200" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64
-// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1250" | FileCheck %s --check-prefixes=CHECK,BUF-F32,BUF-F64
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx942" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64,OTHER-TARGETS
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx950" | FileCheck %s --check-prefixes=CHECK,NO-F32,BUF-F64,OTHER-TARGETS
+// The float cases stay generic on RDNA2 even though gfx103x does encode buffer_atomic_fmin/fmax:
+// tl.atomic_max/min on a float never arrives as RMWOp::MAX on a float (the frontend bitcasts and uses
+// the signed/unsigned integer ordering trick), so enabling the hardware ops would be an unmeasured
+// NaN/+-0 semantics change. The one integer case below is the exception: RDNA2 takes the buffer path
+// for signed atomic max (OTHER-TARGETS vs GFX103X prefixes), while every other family refuses it in
+// ConvertToBufferOps -- that asymmetry is the cross-target gap still open.
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1030" | FileCheck %s --check-prefixes=CHECK,NO-F32,NO-F64,GFX103X
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1031" | FileCheck %s --check-prefixes=CHECK,NO-F32,NO-F64,GFX103X
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1100" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64,OTHER-TARGETS
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1170" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64,OTHER-TARGETS
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1200" | FileCheck %s --check-prefixes=CHECK,BUF-F32,NO-F64,OTHER-TARGETS
+// RUN: triton-opt %s -split-input-file --tritonamdgpu-convert-buffer-ops="gfx-arch=gfx1250" | FileCheck %s --check-prefixes=CHECK,BUF-F32,BUF-F64,OTHER-TARGETS
 
 // Buffer atomic min/max is only emitted for target/type combinations that have a
 // native instruction; everything else must stay on the generic atomic path.
@@ -115,9 +123,11 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, "ttg.thr
     %3 = tt.addptr %arg0, %1 : !tt.ptr<i32>, i32
     %4 = tt.splat %3 : !tt.ptr<i32> -> tensor<1024x!tt.ptr<i32>, #blocked>
     %5 = tt.addptr %4, %2 : tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>
-    // CHECK-NOT: amdg.buffer_atomic_rmw
-    // CHECK: tt.atomic_rmw max
-    // CHECK-NOT: amdg.buffer_atomic_rmw
+    // OTHER-TARGETS-NOT: amdg.buffer_atomic_rmw
+    // OTHER-TARGETS: tt.atomic_rmw max
+    // OTHER-TARGETS-NOT: amdg.buffer_atomic_rmw
+    // GFX103X: amdg.buffer_atomic_rmw max
+    // GFX103X-NOT: tt.atomic_rmw
     %6 = tt.atomic_rmw max, acq_rel, gpu, %5, %values : (tensor<1024x!tt.ptr<i32>, #blocked>, tensor<1024xi32, #blocked>) -> tensor<1024xi32, #blocked>
     tt.return
   }
